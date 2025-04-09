@@ -1,0 +1,112 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 0%;
+    --foreground: 210 40% 98%;
+
+    --card: 220 40% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 220 40% 8%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 199 89% 48%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 270 60% 50%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 220 40% 12%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 199 89% 48%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 40% 15%;
+    --input: 220 40% 15%;
+    --ring: 199 89% 48%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-rajdhani), sans-serif;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-orbitron), sans-serif;
+  }
+}
+
+.gradient-bg {
+  background: linear-gradient(to bottom right, #000000, #0a0a0a, #141414);
+}
+
+/* Futuristic glow effect */
+.glow {
+  box-shadow: 0 0 10px rgba(0, 195, 255, 0.5), 0 0 20px rgba(0, 195, 255, 0.3), 0 0 30px rgba(0, 195, 255, 0.1);
+}
+
+/* Neon text effect */
+.neon-text {
+  text-shadow: 0 0 5px rgba(0, 195, 255, 0.8), 0 0 10px rgba(0, 195, 255, 0.5), 0 0 15px rgba(0, 195, 255, 0.3);
+}
+
+/* Glassmorphism effect */
+.glass {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Reels button hover effect */
+.rounded-full:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 15px rgba(0, 195, 255, 0.8), 0 0 30px rgba(0, 195, 255, 0.5);
+}
+
+/* Ensure full-screen layout for reels page */
+.fixed.inset-0 {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+}
+
+/* Futuristic border */
+.neon-border {
+  border: 2px solid transparent;
+  border-image: linear-gradient(to bottom right, #00c3ff, #7000ff);
+  border-image-slice: 1;
+  box-shadow: 0 0 10px rgba(0, 195, 255, 0.5), inset 0 0 10px rgba(0, 195, 255, 0.5);
+}
+
+/* Futuristic text styles */
+.futuristic-text {
+  font-family: var(--font-orbitron), sans-serif;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.futuristic-subtext {
+  font-family: var(--font-rajdhani), sans-serif;
+  letter-spacing: 0.03em;
+}
+
