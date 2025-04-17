@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { GlobalStyles } from "@/components/GlobalStyles"
 import { MobileMenu } from "@/components/mobile-menu"
 import "./globals.css"
+import { FEATURES } from "@/config/features"
 
 const orbitron = Orbitron({
   subsets: ["latin"],
@@ -69,12 +70,21 @@ export default function RootLayout({
                 <Link href="/subscribe" className="text-foreground hover:text-primary transition-colors">
                   Subscribe
                 </Link>
-                <Link href="/clips" className="text-foreground hover:text-primary transition-colors">
-                  Clips
-                </Link>
-                <Link href="/vee" className="text-foreground hover:text-primary transition-colors">
-                  Vee
-                </Link>
+                {FEATURES.CLIPS && (
+                  <Link href="/clips" className="text-foreground hover:text-primary transition-colors">
+                    Clips
+                  </Link>
+                )}
+                {FEATURES.VEE && (
+                  <Link href="/vee" className="text-foreground hover:text-primary transition-colors">
+                    Vee
+                  </Link>
+                )}
+                {FEATURES.MUSIC && (
+                  <Link href="/music" className="text-foreground hover:text-primary transition-colors">
+                    Music
+                  </Link>
+                )}
               </nav>
               <div className="flex items-center space-x-2">
                 <Link href="/account">

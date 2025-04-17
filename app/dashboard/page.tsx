@@ -14,6 +14,8 @@ import { Input } from "@/components/ui/input"
 import { NewReleases } from "@/components/new-releases"
 import { ReelsButton } from "@/components/reels-button"
 import { AIContent } from "@/components/ai-content"
+import { FEATURES } from "@/config/features"
+import { Film, Music } from "lucide-react"
 
 export default function DashboardPage() {
   const [shuffleMode, setShuffleMode] = useState<"reels" | null>(null)
@@ -84,16 +86,22 @@ export default function DashboardPage() {
 
       <div className="fixed bottom-4 inset-x-0 flex justify-center items-center space-x-4 z-40">
         <ReelsButton />
-        <Link href="/clips-mode">
-          <Button className="rounded-full bg-gradient-to-r from-green-400 via-green-500 to-green-600 text-white hover:from-green-500 hover:via-green-600 hover:to-green-700 px-6 py-2 text-sm font-semibold shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105">
-            Clips
-          </Button>
-        </Link>
-        <Link href="/musicfeed">
-          <Button className="rounded-full bg-gradient-to-r from-blue-600 via-purple-600 to-red-600 text-white hover:from-blue-700 hover:via-purple-700 hover:to-red-700 px-6 py-2 text-sm font-semibold shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105">
-            Music
-          </Button>
-        </Link>
+        {FEATURES.CLIPS && (
+          <Link href="/clips-mode">
+            <Button variant="ghost" size="icon" className="text-foreground hover:text-foreground hover:bg-accent">
+              <Film className="h-5 w-5" />
+              <span className="sr-only">Clips</span>
+            </Button>
+          </Link>
+        )}
+        {FEATURES.MUSIC && (
+          <Link href="/musicfeed">
+            <Button variant="ghost" size="icon" className="text-foreground hover:text-foreground hover:bg-accent">
+              <Music className="h-5 w-5" />
+              <span className="sr-only">Music</span>
+            </Button>
+          </Link>
+        )}
       </div>
     </div>
   )

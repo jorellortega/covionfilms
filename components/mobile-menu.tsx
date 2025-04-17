@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Menu, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { FEATURES } from "@/config/features"
 
 export function MobileMenu() {
   const [isOpen, setIsOpen] = useState(false)
@@ -33,15 +34,30 @@ export function MobileMenu() {
             >
               Subscribe
             </Link>
-            <Link
-              href="/clips"
-              className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"
-            >
-              Clips
-            </Link>
-            <Link href="/vee" className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors">
-              Vee
-            </Link>
+            {FEATURES.CLIPS && (
+              <Link
+                href="/clips"
+                className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"
+              >
+                Clips
+              </Link>
+            )}
+            {FEATURES.VEE && (
+              <Link
+                href="/vee"
+                className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"
+              >
+                Vee
+              </Link>
+            )}
+            {FEATURES.MUSIC && (
+              <Link
+                href="/music"
+                className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"
+              >
+                Music
+              </Link>
+            )}
           </div>
         </nav>
       )}
