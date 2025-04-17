@@ -13,13 +13,22 @@ interface UserProfile {
   name: string
   email: string
   status: "active" | "inactive" | "suspended"
-  accountType: "free" | "standard" | "full"
+  role: "admin" | "management" | "creator" | "user"
+  subscription: "free" | "standard" | "premium" | "family"
+  subscriptionExpiry?: Date
   avatarUrl?: string
 }
 
 export default function AccountPage() {
   const { user } = useAuth()
-  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [profile, setProfile] = useState<UserProfile>({
+    name: user?.name || "Guest",
+    email: user?.email || "",
+    status: "active",
+    role: user?.role || "user",
+    subscription: user?.subscription || "free",
+    subscriptionExpiry: user?.subscriptionExpiry,
+  })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -32,7 +41,9 @@ export default function AccountPage() {
         name: user?.name || "John Doe",
         email: user?.email || "john.doe@example.com",
         status: "active",
-        accountType: user?.role === "full" ? "full" : user?.role === "standard" ? "standard" : "free",
+        role: user?.role === "admin" ? "admin" : user?.role === "management" ? "management" : user?.role === "creator" ? "creator" : "user",
+        subscription: user?.subscription === "premium" ? "premium" : user?.subscription === "family" ? "family" : "free",
+        subscriptionExpiry: user?.subscriptionExpiry,
         avatarUrl: "/placeholder.svg",
       }
 
@@ -90,18 +101,32 @@ export default function AccountPage() {
             </Badge>
           </div>
           <div className="flex justify-between items-center">
-            <span className="font-semibold">Account Type</span>
+            <span className="font-semibold">Role</span>
             <Badge variant="secondary" className="capitalize">
-              {profile.accountType}
+              {profile.role}
             </Badge>
           </div>
+          <div className="flex justify-between items-center">
+            <span className="font-semibold">Subscription</span>
+            <Badge variant="secondary" className="capitalize">
+              {profile.subscription}
+            </Badge>
+          </div>
+          {profile.subscriptionExpiry && (
+            <div className="flex justify-between items-center">
+              <span className="font-semibold">Subscription Expires</span>
+              <span className="text-muted-foreground">
+                {new Date(profile.subscriptionExpiry).toLocaleDateString()}
+              </span>
+            </div>
+          )}
           <div className="pt-4 flex justify-between">
             <Link href="/settings">
               <Button variant="outline">Edit Profile</Button>
             </Link>
             <Link href="/subscribe">
               <Button variant="default" className="bg-gradient-to-r from-primary to-[#8e2de2] text-white">
-                {profile.accountType === "free" ? "Upgrade Account" : "Manage Subscription"}
+                {profile.subscription === "free" ? "Upgrade Account" : "Manage Subscription"}
               </Button>
             </Link>
           </div>

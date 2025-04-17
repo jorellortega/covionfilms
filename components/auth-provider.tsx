@@ -4,13 +4,16 @@ import type React from "react"
 
 import { createContext, useContext, useState, useEffect } from "react"
 
-type UserRole = "free" | "standard" | "full" | "admin" | "management" | "vip" | "creator"
+type UserRole = "admin" | "management" | "creator" | "user"
+type SubscriptionTier = "free" | "standard" | "premium" | "family"
 
 type User = {
   id: string
   name: string
   email: string
   role: UserRole
+  subscription: SubscriptionTier
+  subscriptionExpiry?: Date
 }
 
 type AuthContextType = {
@@ -26,13 +29,62 @@ const AuthContext = createContext<AuthContextType>({
 })
 
 const users: (User & { password: string })[] = [
-  { id: "1", name: "Free User", email: "free@example.com", password: "freepass", role: "free" },
-  { id: "2", name: "Standard User", email: "standard@example.com", password: "standardpass", role: "standard" },
-  { id: "3", name: "Full User", email: "full@example.com", password: "fullpass", role: "full" },
-  { id: "4", name: "Admin User", email: "admin@example.com", password: "adminpass", role: "admin" },
-  { id: "5", name: "Management User", email: "management@example.com", password: "managementpass", role: "management" },
-  { id: "6", name: "VIP User", email: "vip@example.com", password: "vippass", role: "vip" },
-  { id: "7", name: "Creator User", email: "creator@example.com", password: "creatorpass", role: "creator" },
+  { 
+    id: "1", 
+    name: "Admin User", 
+    email: "admin@example.com", 
+    password: "adminpass", 
+    role: "admin",
+    subscription: "premium"
+  },
+  { 
+    id: "2", 
+    name: "Management User", 
+    email: "management@example.com", 
+    password: "managementpass", 
+    role: "management",
+    subscription: "premium"
+  },
+  { 
+    id: "3", 
+    name: "Creator User", 
+    email: "creator@example.com", 
+    password: "creatorpass", 
+    role: "creator",
+    subscription: "premium"
+  },
+  { 
+    id: "4", 
+    name: "Free User", 
+    email: "free@example.com", 
+    password: "freepass", 
+    role: "user",
+    subscription: "free"
+  },
+  { 
+    id: "5", 
+    name: "Standard User", 
+    email: "standard@example.com", 
+    password: "standardpass", 
+    role: "user",
+    subscription: "standard"
+  },
+  { 
+    id: "6", 
+    name: "Premium User", 
+    email: "premium@example.com", 
+    password: "premiumpass", 
+    role: "user",
+    subscription: "premium"
+  },
+  { 
+    id: "7", 
+    name: "Family User", 
+    email: "family@example.com", 
+    password: "familypass", 
+    role: "user",
+    subscription: "family"
+  }
 ]
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -66,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export const useAuth = () => {
   const context = useContext(AuthContext)
-  if (context === undefined) {
+  if (!context) {
     throw new Error("useAuth must be used within an AuthProvider")
   }
   return context
