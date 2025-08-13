@@ -162,70 +162,6 @@ export function ReelsRow({ shuffleMode }: ReelsRowProps) {
 
       <div className="mt-8">
         <div className="flex justify-between items-center">
-          <h2 className="text-2xl font-bold tracking-wider uppercase bg-gradient-to-r from-[#ff0050] to-[#ff2975] text-transparent bg-clip-text futuristic-text">
-            Coming Soon
-          </h2>
-          <Button
-            onClick={toggleViewMode}
-            variant="outline"
-            size="sm"
-            className="bg-black/50 border-primary text-primary hover:bg-primary hover:text-black transition-colors duration-300"
-          >
-            <ViewIcon className="h-5 w-5 mr-2" />
-            <span className="uppercase tracking-wider text-xs font-bold futuristic-subtext">
-              {viewMode === "scroll" ? "Grid" : viewMode === "grid" ? "List" : "Scroll"}
-            </span>
-          </Button>
-        </div>
-        <ScrollArea className="w-full rounded-md border border-gray-800 mt-4">
-          {viewMode === "scroll" && (
-            <div className="flex w-max space-x-4 p-4">
-              {[1, 2, 3, 4, 5].map((item) => (
-                <Card
-                  key={item}
-                  className="w-[150px] h-[200px] bg-card relative overflow-hidden border border-gray-800 group glass"
-                >
-                  <CardContent className="p-0 w-full h-full flex items-center justify-center">
-                    <p className="text-lg font-semibold text-primary truncate futuristic-text">Coming Soon</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-          {viewMode === "grid" && (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 p-4">
-              {[1, 2, 3, 4, 5].map((item) => (
-                <Card
-                  key={item}
-                  className="w-[150px] h-[200px] bg-card relative overflow-hidden border border-gray-800 group glass"
-                >
-                  <CardContent className="p-0 w-full h-full flex items-center justify-center">
-                    <p className="text-lg font-semibold text-primary truncate futuristic-text">Coming Soon</p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-          {viewMode === "list" && (
-            <div className="space-y-4 p-4">
-              {[1, 2, 3, 4, 5].map((item) => (
-                <Card key={item} className="flex items-center space-x-4 p-2 bg-card rounded-md border border-gray-800">
-                  <div className="w-16 h-24 bg-primary/20 flex items-center justify-center rounded-md">
-                    <p className="text-xs font-semibold text-primary">Coming Soon</p>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-primary">Upcoming Release {item}</p>
-                    <p className="text-sm text-muted-foreground">Release date TBA</p>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          )}
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
-      </div>
-      <div className="mt-8">
-        <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold tracking-wider uppercase bg-gradient-to-r from-[#00ff87] to-[#60efff] text-transparent bg-clip-text futuristic-text">
             New Releases
           </h2>
@@ -273,7 +209,7 @@ export function ReelsRow({ shuffleMode }: ReelsRowProps) {
           {viewMode === "list" && (
             <div className="space-y-4 p-4">
               {[1, 2, 3, 4, 5].map((item) => (
-                <Card key={item} className="flex items-center space-x-4 p-2 bg-card rounded-md border border-gray-800">
+                <Card key={item} className="flex items-center space-x-2 bg-card rounded-md border border-gray-800">
                   <div className="w-16 h-24 bg-primary/20 flex items-center justify-center rounded-md">
                     <p className="text-xs font-semibold text-primary">New</p>
                   </div>

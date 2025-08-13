@@ -3,6 +3,8 @@
 import type React from "react"
 
 import { createContext, useContext, useState, useEffect } from "react"
+import { supabase } from "@/lib/supabaseClient"
+import { User as SupabaseUser, Session } from '@supabase/supabase-js'
 
 type UserRole = "admin" | "management" | "creator" | "user"
 type SubscriptionTier = "free" | "standard" | "premium" | "family"
@@ -19,101 +21,135 @@ type User = {
 type AuthContextType = {
   user: User | null
   login: (email: string, password: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
+  isLoading: boolean
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   login: async () => {},
-  logout: () => {},
+  logout: async () => {},
+  isLoading: true,
 })
-
-const users: (User & { password: string })[] = [
-  { 
-    id: "1", 
-    name: "Admin User", 
-    email: "admin@example.com", 
-    password: "adminpass", 
-    role: "admin",
-    subscription: "premium"
-  },
-  { 
-    id: "2", 
-    name: "Management User", 
-    email: "management@example.com", 
-    password: "managementpass", 
-    role: "management",
-    subscription: "premium"
-  },
-  { 
-    id: "3", 
-    name: "Creator User", 
-    email: "creator@example.com", 
-    password: "creatorpass", 
-    role: "creator",
-    subscription: "premium"
-  },
-  { 
-    id: "4", 
-    name: "Free User", 
-    email: "free@example.com", 
-    password: "freepass", 
-    role: "user",
-    subscription: "free"
-  },
-  { 
-    id: "5", 
-    name: "Standard User", 
-    email: "standard@example.com", 
-    password: "standardpass", 
-    role: "user",
-    subscription: "standard"
-  },
-  { 
-    id: "6", 
-    name: "Premium User", 
-    email: "premium@example.com", 
-    password: "premiumpass", 
-    role: "user",
-    subscription: "premium"
-  },
-  { 
-    id: "7", 
-    name: "Family User", 
-    email: "family@example.com", 
-    password: "familypass", 
-    role: "user",
-    subscription: "family"
-  }
-]
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("user")
-    if (storedUser) {
-      setUser(JSON.parse(storedUser))
+    // Get initial session
+    const getInitialSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        await loadUserData(session.user)
+      }
+      setIsLoading(false)
     }
+
+    getInitialSession()
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'SIGNED_IN' && session) {
+          await loadUserData(session.user)
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null)
+        }
+        setIsLoading(false)
+      }
+    )
+
+    return () => subscription.unsubscribe()
   }, [])
 
-  const login = async (email: string, password: string) => {
-    const foundUser = users.find((u) => u.email === email && u.password === password)
-    if (foundUser) {
-      const { password, ...userWithoutPassword } = foundUser
-      setUser(userWithoutPassword)
-      localStorage.setItem("user", JSON.stringify(userWithoutPassword))
-    } else {
-      throw new Error("Invalid email or password")
+  const loadUserData = async (supabaseUser: SupabaseUser) => {
+    try {
+      // Get user data from our custom users table
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', supabaseUser.id)
+        .single()
+
+      if (userError) {
+        console.error('Error loading user data:', userError)
+        return
+      }
+
+      // Get subscription data
+      const { data: subscriptionData, error: subscriptionError } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', supabaseUser.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (subscriptionError && subscriptionError.code !== 'PGRST116') {
+        console.error('Error loading subscription data:', subscriptionError)
+      }
+
+      const user: User = {
+        id: userData.id,
+        name: userData.name,
+        email: userData.email,
+        role: userData.role as UserRole,
+        subscription: subscriptionData?.tier as SubscriptionTier || 'free',
+        subscriptionExpiry: subscriptionData?.expiry_date ? new Date(subscriptionData.expiry_date) : undefined
+      }
+
+      setUser(user)
+    } catch (error) {
+      console.error('Error loading user data:', error)
     }
   }
 
-  const logout = () => {
-    setUser(null)
-    localStorage.removeItem("user")
+  const login = async (email: string, password: string) => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (error) {
+        throw error
+      }
+
+      if (data.user) {
+        await loadUserData(data.user)
+      }
+    } catch (error: any) {
+      console.error('Login error:', error)
+      
+      if (error.message?.includes('Invalid login credentials')) {
+        throw new Error('Invalid email or password')
+      } else if (error.message?.includes('Email not confirmed')) {
+        throw new Error('Please check your email and confirm your account before logging in')
+      } else {
+        throw new Error('Login failed. Please try again.')
+      }
+    }
   }
 
-  return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>
+  const logout = async () => {
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.error('Logout error:', error)
+      }
+      setUser(null)
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
+  }
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
 export const useAuth = () => {

@@ -9,6 +9,7 @@ import { GlobalStyles } from "@/components/GlobalStyles"
 import { MobileMenu } from "@/components/mobile-menu"
 import "./globals.css"
 import { FEATURES } from "@/config/features"
+import { DynamicNavigation } from "@/components/dynamic-navigation"
 
 const orbitron = Orbitron({
   subsets: ["latin"],
@@ -54,38 +55,7 @@ export default function RootLayout({
                   </p>
                 </div>
               </div>
-              <nav className="hidden md:flex items-center space-x-4 futuristic-subtext">
-                <Link href="/dashboard" className="text-foreground hover:text-primary transition-colors">
-                  Dashboard
-                </Link>
-                <Link href="/creator" className="text-foreground hover:text-primary transition-colors">
-                  Creator
-                </Link>
-                <Link href="/upload" className="text-foreground hover:text-primary transition-colors">
-                  Upload
-                </Link>
-                <Link href="/login" className="text-foreground hover:text-primary transition-colors">
-                  Login
-                </Link>
-                <Link href="/subscribe" className="text-foreground hover:text-primary transition-colors">
-                  Subscribe
-                </Link>
-                {FEATURES.CLIPS && (
-                  <Link href="/clips" className="text-foreground hover:text-primary transition-colors">
-                    Clips
-                  </Link>
-                )}
-                {FEATURES.VEE && (
-                  <Link href="/vee" className="text-foreground hover:text-primary transition-colors">
-                    Vee
-                  </Link>
-                )}
-                {FEATURES.MUSIC && (
-                  <Link href="/music" className="text-foreground hover:text-primary transition-colors">
-                    Music
-                  </Link>
-                )}
-              </nav>
+              <DynamicNavigation />
               <div className="flex items-center space-x-2">
                 <Link href="/account">
                   <Button variant="ghost" size="icon" className="text-foreground hover:text-foreground hover:bg-accent">
