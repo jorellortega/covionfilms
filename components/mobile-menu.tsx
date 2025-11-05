@@ -50,6 +50,15 @@ export function MobileMenu() {
                 >
                   Dashboard
                 </Link>
+                {user.role === 'admin' || user.role === 'management' ? (
+                  <Link
+                    href="/manage-media"
+                    className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    Manage Media
+                  </Link>
+                ) : null}
                 {user.role === 'creator' || user.role === 'admin' || user.role === 'management' ? (
                   <Link
                     href="/creator"
@@ -75,6 +84,15 @@ export function MobileMenu() {
                     onClick={() => setIsOpen(false)}
                   >
                     Streaming Control
+                  </Link>
+                ) : null}
+                {user.role === 'admin' ? (
+                  <Link
+                    href="/admin/dashboard-control"
+                    className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    Dashboard Control
                   </Link>
                 ) : null}
                 <Link

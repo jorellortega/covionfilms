@@ -6,11 +6,11 @@ const path = require('path');
 require('dotenv').config({ path: '.env.local' });
 
 // Supabase configuration
-const supabaseUrl = `https://kkrszdkkkfvfdnkbxlgnw.supabase.co`;
-const supabaseServiceKey = process.env.SERVICE_ROLE_SECRET;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || `https://ryvbubkbtwvhzzaqzmlw.supabase.co`;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_SECRET;
 
 if (!supabaseServiceKey) {
-  console.error('❌ SERVICE_ROLE_SECRET not found in .env.local');
+  console.error('❌ SUPABASE_SERVICE_ROLE_SECRET not found in .env.local');
   process.exit(1);
 }
 
@@ -393,6 +393,87 @@ async function runMigrations() {
       console.log('     ⚠️  Streaming sources insertion skipped');
     }
     
+    // Create video_assets table for HLS streaming
+    console.log('   📝 Creating video_assets table...');
+    try {
+      const { error } = await supabase.rpc('exec_sql', { 
+        sql: `
+          CREATE TABLE IF NOT EXISTS video_assets (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            title TEXT NOT NULL,
+            description TEXT,
+            manifest_url TEXT NOT NULL,
+            file_size BIGINT,
+            duration INTEGER,
+            resolution TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+            status TEXT DEFAULT 'processing' CHECK (status IN ('processing', 'ready', 'error'))
+          );
+        `
+      });
+      
+      if (error) {
+        console.log('     ⚠️  Video_assets table creation had issues (may already exist)');
+      } else {
+        console.log('     ✅ Video_assets table created successfully');
+      }
+    } catch (e) {
+      console.log('     ⚠️  Video_assets table creation skipped (may already exist)');
+    }
+    
+    // Create indexes for video_assets
+    try {
+      const { error } = await supabase.rpc('exec_sql', { 
+        sql: `
+          CREATE INDEX IF NOT EXISTS idx_video_assets_user_id ON video_assets(user_id);
+          CREATE INDEX IF NOT EXISTS idx_video_assets_status ON video_assets(status);
+          CREATE INDEX IF NOT EXISTS idx_video_assets_created_at ON video_assets(created_at);
+        `
+      });
+      
+      if (error) {
+        console.log('     ⚠️  Video_assets indexes creation had issues (may already exist)');
+      } else {
+        console.log('     ✅ Video_assets indexes created successfully');
+      }
+    } catch (e) {
+      console.log('     ⚠️  Video_assets indexes creation skipped (may already exist)');
+    }
+    
+    // Enable RLS and create policies for video_assets
+    try {
+      const { error } = await supabase.rpc('exec_sql', { 
+        sql: `
+          ALTER TABLE video_assets ENABLE ROW LEVEL SECURITY;
+          
+          CREATE POLICY "Allow public read access" ON video_assets
+            FOR SELECT USING (true);
+          
+          CREATE POLICY "Allow authenticated insert" ON video_assets
+            FOR INSERT WITH CHECK (auth.uid() = user_id);
+          
+          CREATE POLICY "Allow authenticated update" ON video_assets
+            FOR UPDATE USING (auth.uid() = user_id);
+          
+          CREATE POLICY "Allow authenticated delete" ON video_assets
+            FOR DELETE USING (auth.uid() = user_id);
+          
+          CREATE POLICY "Allow admin full access" ON video_assets
+            FOR ALL USING (auth.role() = 'admin');
+        `
+      });
+      
+      if (error) {
+        console.log('     ⚠️  Video_assets RLS policies creation had issues (may already exist)');
+      } else {
+        console.log('     ✅ Video_assets RLS policies created successfully');
+      }
+    } catch (e) {
+      console.log('     ⚠️  Video_assets RLS policies creation skipped (may already exist)');
+    }
+    
     console.log('\n🎉 Migration completed successfully!');
     console.log('\n📊 Database structure created:');
     console.log('   • users table');
@@ -407,6 +488,7 @@ async function runMigrations() {
     console.log('   • tier_configurations table');
     console.log('   • dropbox_configurations table');
     console.log('   • video_assignments table');
+    console.log('   • video_assets table (HLS streaming)');
     
   } catch (error) {
     console.error('❌ Migration failed:', error.message);

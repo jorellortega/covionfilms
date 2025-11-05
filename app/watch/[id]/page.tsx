@@ -1,0 +1,596 @@
+'use client'
+
+import { useEffect, useRef, useState } from 'react'
+import { useParams } from 'next/navigation'
+import { createClient } from '@supabase/supabase-js'
+import Hls from 'hls.js'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { ArrowLeft, Play, Pause, Volume2, VolumeX } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
+export default function WatchPage() {
+  const params = useParams()
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const hlsRef = useRef<Hls | null>(null)
+  const router = useRouter()
+  
+  const [videoData, setVideoData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+
+  useEffect(() => {
+    const loadVideo = async () => {
+      if (!params.id) return
+
+      try {
+        setLoading(true)
+        
+        // Get video data from database
+        const { data, error: dbError } = await supabase
+          .from('video_assets')
+          .select('*')
+          .eq('id', params.id)
+          .maybeSingle()
+
+        if (dbError) {
+          throw new Error(`Database error: ${dbError.message}`)
+        }
+
+        if (!data) {
+          throw new Error('Video not found')
+        }
+
+        // Check if video is ready
+        if (data.status !== 'ready') {
+          throw new Error('Video is not ready for playback')
+        }
+
+        let manifestUrl = data.manifest_url
+        if (!manifestUrl) {
+          throw new Error('No manifest URL found')
+        }
+
+        console.log('📹 Video manifest URL:', manifestUrl)
+
+        // Check if this is a YouTube URL and convert to embed format if needed
+        const isYouTube = manifestUrl.includes('youtube.com') || manifestUrl.includes('youtu.be')
+        
+        if (isYouTube) {
+          // Convert YouTube URL to embed format if needed
+          if (!manifestUrl.includes('youtube.com/embed/')) {
+            const youtubeRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/
+            const match = manifestUrl.match(youtubeRegex)
+            
+            if (match && match[1]) {
+              manifestUrl = `https://www.youtube.com/embed/${match[1]}`
+              console.log('✅ Converted YouTube URL to embed format:', manifestUrl)
+            } else if (manifestUrl.includes('youtube.com/embed/')) {
+              // Already embed format
+              console.log('✅ YouTube URL already in embed format')
+            } else {
+              // Couldn't parse, try to use as-is
+              console.warn('⚠️ Could not parse YouTube URL:', manifestUrl)
+            }
+          }
+          
+          // Update videoData with the embed URL
+          setVideoData({ ...data, manifest_url: manifestUrl })
+          // YouTube videos need iframe embedding, not video element
+          setLoading(false)
+          return
+        }
+
+        // Check if this is a Dropbox URL and convert to direct download if needed
+        const isDropbox = manifestUrl.includes('dropbox.com')
+        console.log('🔍 Checking URL type - isDropbox:', isDropbox, 'URL:', manifestUrl)
+        
+        if (isDropbox) {
+          console.log('📦 Processing Dropbox URL...')
+          const originalUrl = manifestUrl
+          
+          // Convert Dropbox share link to direct download URL
+          // Dropbox share links can be:
+          // - https://www.dropbox.com/s/xxxxx/file.mp4?dl=0
+          // - https://www.dropbox.com/scl/fi/xxxxx/file.mp4?rlkey=xxx&dl=0
+          // Convert to: ...?dl=1 or ...&dl=1
+          
+          // Replace ?dl=0 with ?dl=1
+          if (manifestUrl.includes('?dl=0')) {
+            manifestUrl = manifestUrl.replace('?dl=0', '?dl=1')
+            console.log('✅ Converted Dropbox URL from ?dl=0 to ?dl=1')
+            console.log('   Original:', originalUrl)
+            console.log('   Converted:', manifestUrl)
+          } 
+          // Replace &dl=0 with &dl=1 (for URLs with rlkey parameter)
+          else if (manifestUrl.includes('&dl=0')) {
+            manifestUrl = manifestUrl.replace('&dl=0', '&dl=1')
+            console.log('✅ Converted Dropbox URL from &dl=0 to &dl=1')
+            console.log('   Original:', originalUrl)
+            console.log('   Converted:', manifestUrl)
+          }
+          // If dl parameter exists but is already 1, keep it
+          else if (manifestUrl.includes('dl=1')) {
+            console.log('ℹ️ Dropbox URL already has dl=1 parameter:', manifestUrl)
+          }
+          // Add dl=1 if no dl parameter exists
+          else {
+            manifestUrl = manifestUrl + (manifestUrl.includes('?') ? '&' : '?') + 'dl=1'
+            console.log('✅ Added dl=1 to Dropbox URL')
+            console.log('   Original:', originalUrl)
+            console.log('   Converted:', manifestUrl)
+          }
+          
+          // Update videoData with the converted URL
+          setVideoData({ ...data, manifest_url: manifestUrl })
+          console.log('📦 Updated videoData with Dropbox URL:', manifestUrl)
+        }
+
+        // For non-YouTube videos, set videoData now
+        // If Dropbox, use the converted URL, otherwise use original data
+        if (isDropbox) {
+          // videoData already set with converted URL above
+          console.log('📦 Using converted Dropbox URL in videoData')
+        } else {
+          setVideoData(data)
+        }
+
+        // Function to try loading video with error handling
+        const tryLoadVideo = async (url: string, isBackup = false) => {
+          return new Promise<void>((resolve, reject) => {
+            if (!videoRef.current) {
+              reject(new Error('Video element not available'))
+              return
+            }
+
+            if (url.includes('.m3u8') || url.includes('application/vnd.apple.mpegurl')) {
+              // HLS stream
+              if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
+                // Safari iOS native HLS support
+                videoRef.current.src = url
+                videoRef.current.onloadedmetadata = () => {
+                  console.log('✅ Using native HLS support')
+                  setLoading(false)
+                  resolve()
+                }
+                videoRef.current.onerror = () => {
+                  if (!isBackup && data.backup_url) {
+                    console.log('⚠️ Primary URL failed, trying backup...')
+                    tryLoadVideo(data.backup_url, true).then(resolve).catch(reject)
+                  } else {
+                    reject(new Error('Failed to load video'))
+                  }
+                }
+              } else if (Hls.isSupported()) {
+                // Use HLS.js for other browsers
+                const hls = new Hls({
+                  enableWorker: true,
+                  lowLatencyMode: true,
+                  backBufferLength: 90
+                })
+                
+                hlsRef.current = hls
+                hls.loadSource(url)
+                hls.attachMedia(videoRef.current)
+                
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                  console.log('✅ HLS manifest parsed')
+                  setLoading(false)
+                  resolve()
+                })
+                
+                hls.on(Hls.Events.ERROR, (event, errorData) => {
+                  console.error('❌ HLS error:', errorData)
+                  if (errorData.fatal) {
+                    if (!isBackup && data.backup_url) {
+                      console.log('⚠️ Primary URL failed, trying backup...')
+                      if (hlsRef.current) {
+                        hlsRef.current.destroy()
+                        hlsRef.current = null
+                      }
+                      tryLoadVideo(data.backup_url, true).then(resolve).catch(reject)
+                    } else {
+                      setError(`HLS Error: ${errorData.details}`)
+                      reject(new Error(`HLS Error: ${errorData.details}`))
+                    }
+                  }
+                })
+                
+                console.log('✅ Using HLS.js')
+              } else {
+                // Fallback: let the browser try
+                videoRef.current.src = url
+                videoRef.current.onloadedmetadata = () => {
+                  console.log('✅ Using direct video URL')
+                  setLoading(false)
+                  resolve()
+                }
+                videoRef.current.onerror = () => {
+                  if (!isBackup && data.backup_url) {
+                    console.log('⚠️ Primary URL failed, trying backup...')
+                    tryLoadVideo(data.backup_url, true).then(resolve).catch(reject)
+                  } else {
+                    reject(new Error('Failed to load video'))
+                  }
+                }
+              }
+            } else {
+              // Direct video URL (MP4, Dropbox, etc.) - use native video element
+              // For Dropbox URLs, we need to set crossOrigin
+              if (url.includes('dropbox.com')) {
+                videoRef.current.crossOrigin = 'anonymous'
+                console.log('📦 Setting crossOrigin for Dropbox URL')
+              }
+              
+              videoRef.current.src = url
+              videoRef.current.onloadedmetadata = () => {
+                console.log('✅ Using direct video URL:', url.includes('dropbox.com') ? 'Dropbox' : 'Direct')
+                setLoading(false)
+                resolve()
+              }
+              videoRef.current.onerror = (e) => {
+                console.error('❌ Video element error:', e, 'URL:', url)
+                if (!isBackup && data.backup_url) {
+                  console.log('⚠️ Primary URL failed, trying backup...')
+                  tryLoadVideo(data.backup_url, true).then(resolve).catch(reject)
+                } else {
+                  reject(new Error(`Failed to load video. URL: ${url}`))
+                }
+              }
+            }
+          })
+        }
+
+        // Initialize HLS player for direct URLs and HLS streams
+        // Skip initialization for YouTube (already handled) and Dropbox (handled in render)
+        console.log('🎬 Initializing video player - isYouTube:', isYouTube, 'isDropbox:', isDropbox, 'videoRef.current:', !!videoRef.current)
+        
+        if (!isYouTube && !isDropbox && videoRef.current) {
+          console.log('📹 Loading non-Dropbox/non-YouTube video via tryLoadVideo')
+          tryLoadVideo(manifestUrl).catch((err) => {
+            console.error('❌ Failed to load video:', err)
+            setError(err.message || 'Failed to load video')
+            setLoading(false)
+          })
+        } else if (isDropbox) {
+          console.log('📦 Dropbox video detected - will be handled by video element in render')
+          console.log('   manifestUrl:', manifestUrl)
+          // Dropbox video will be loaded by the video element's src attribute in the render
+          // Just set loading to false initially, the video element will handle loading
+          setLoading(false)
+        } else {
+          console.log('⚠️ No video initialization needed (YouTube or other case)')
+        }
+
+      } catch (err: any) {
+        console.error('❌ Error loading video:', err)
+        setError(err.message || 'Failed to load video')
+        setLoading(false)
+      }
+    }
+
+    loadVideo()
+
+    // Cleanup
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy()
+        hlsRef.current = null
+      }
+    }
+  }, [params.id])
+
+  // Video event handlers
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    const handleTimeUpdate = () => setCurrentTime(video.currentTime)
+    const handleDurationChange = () => setDuration(video.duration)
+    const handlePlay = () => setIsPlaying(true)
+    const handlePause = () => setIsPlaying(false)
+    const handleLoadedMetadata = () => setLoading(false)
+
+    video.addEventListener('timeupdate', handleTimeUpdate)
+    video.addEventListener('durationchange', handleDurationChange)
+    video.addEventListener('play', handlePlay)
+    video.addEventListener('pause', handlePause)
+    video.addEventListener('loadedmetadata', handleLoadedMetadata)
+
+    return () => {
+      video.removeEventListener('timeupdate', handleTimeUpdate)
+      video.removeEventListener('durationchange', handleDurationChange)
+      video.removeEventListener('play', handlePlay)
+      video.removeEventListener('pause', handlePause)
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata)
+    }
+  }, [])
+
+  const togglePlay = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause()
+      } else {
+        videoRef.current.play()
+      }
+    }
+  }
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted
+      setIsMuted(!isMuted)
+    }
+  }
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Card className="max-w-2xl mx-auto">
+          <CardContent className="text-center py-8">
+            <div className="text-red-500 mb-4">
+              <svg className="mx-auto h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold mb-2">Error Loading Video</h2>
+            <p className="text-muted-foreground mb-4">{error}</p>
+            <Button onClick={() => router.back()}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Go Back
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Card className="max-w-2xl mx-auto">
+          <CardContent className="text-center py-8">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-primary mx-auto mb-4"></div>
+            <h2 className="text-xl font-semibold mb-2">Loading Video...</h2>
+            <p className="text-muted-foreground">Please wait while we prepare your video for streaming</p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Video Player */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-xl">{videoData?.title || 'Video Player'}</CardTitle>
+              <Button variant="outline" onClick={() => router.back()}>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="relative bg-black rounded-lg overflow-hidden">
+              {videoData?.manifest_url && 
+              (videoData.manifest_url.includes('youtube.com/embed/') || 
+               videoData.manifest_url.includes('youtube.com') || 
+               videoData.manifest_url.includes('youtu.be')) ? (
+                // YouTube iframe
+                <div className="aspect-video w-full">
+                  <iframe
+                    src={
+                      videoData.manifest_url.includes('youtube.com/embed/') 
+                        ? videoData.manifest_url
+                        : (() => {
+                            // Convert to embed if needed
+                            const youtubeRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/
+                            const match = videoData.manifest_url.match(youtubeRegex)
+                            return match && match[1] 
+                              ? `https://www.youtube.com/embed/${match[1]}`
+                              : videoData.manifest_url
+                          })()
+                    }
+                    className="w-full h-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    title={videoData.title}
+                    onLoad={() => {
+                      console.log('✅ YouTube iframe loaded')
+                      setLoading(false)
+                    }}
+                    onError={() => {
+                      console.error('❌ YouTube iframe failed to load')
+                      setError('Failed to load YouTube video')
+                      setLoading(false)
+                    }}
+                  />
+                </div>
+              ) : videoData?.manifest_url?.includes('dropbox.com') ? (
+                // Dropbox video - use iframe with blob URL workaround or direct link
+                (() => {
+                  console.log('🎬 Rendering Dropbox video element')
+                  console.log('   manifest_url:', videoData.manifest_url)
+                  
+                  // Dropbox doesn't support CORS for video streaming
+                  // We'll use a workaround: create an iframe that loads the video
+                  // Or use a proxy URL if available
+                  
+                  // Try using the direct download link without CORS restrictions
+                  // Note: This may not work due to CORS, but we'll try
+                  const dropboxUrl = videoData.manifest_url
+                  
+                  return (
+                    <div className="w-full space-y-4">
+                      <div className="bg-yellow-900/20 border border-yellow-700 rounded-lg p-4">
+                        <p className="text-yellow-200 text-sm">
+                          ⚠️ Dropbox videos may not play due to CORS restrictions. 
+                          If the video doesn't load, please use a different video source.
+                        </p>
+                      </div>
+                      <video
+                        ref={videoRef}
+                        className="w-full h-auto max-h-[70vh]"
+                        controls
+                        playsInline
+                        preload="auto"
+                        src={dropboxUrl}
+                        // Don't use crossOrigin - Dropbox doesn't support CORS headers
+                        // This will likely fail due to CORS, but we'll try anyway
+                        onLoadStart={() => {
+                          console.log('📥 Dropbox video onLoadStart fired')
+                        }}
+                        onLoadedMetadata={() => {
+                          console.log('✅ Dropbox video onLoadedMetadata fired')
+                          if (videoRef.current) {
+                            console.log('   Duration:', videoRef.current.duration)
+                            console.log('   Video width:', videoRef.current.videoWidth)
+                            console.log('   Video height:', videoRef.current.videoHeight)
+                          }
+                          setLoading(false)
+                        }}
+                        onCanPlay={() => {
+                          console.log('✅ Dropbox video onCanPlay fired')
+                        }}
+                        onCanPlayThrough={() => {
+                          console.log('✅ Dropbox video can play through')
+                        }}
+                        onError={(e) => {
+                          console.error('❌ Dropbox video onError fired')
+                          console.error('   Event:', e)
+                          if (videoRef.current?.error) {
+                            console.error('   Error code:', videoRef.current.error.code)
+                            console.error('   Error message:', videoRef.current.error.message)
+                            
+                            const errorMessages: { [key: number]: string } = {
+                              1: 'MEDIA_ERR_ABORTED - Video loading aborted',
+                              2: 'MEDIA_ERR_NETWORK - Network error while loading video',
+                              3: 'MEDIA_ERR_DECODE - Video decoding error',
+                              4: 'MEDIA_ERR_SRC_NOT_SUPPORTED - CORS error: Dropbox does not allow cross-origin video streaming'
+                            }
+                            console.error('   Error meaning:', errorMessages[videoRef.current.error.code] || 'Unknown error')
+                          }
+                          setError('Dropbox videos cannot be streamed directly due to CORS restrictions. Please download the video or use a different hosting service (YouTube, direct hosting, etc.).')
+                          setLoading(false)
+                        }}
+                        onStalled={() => {
+                          console.warn('⚠️ Dropbox video stalled')
+                        }}
+                        onWaiting={() => {
+                          console.warn('⏳ Dropbox video waiting for data')
+                        }}
+                      />
+                    </div>
+                  )
+                })()
+              ) : (
+                <>
+                  <video
+                    ref={videoRef}
+                    className="w-full h-auto max-h-[70vh]"
+                    controls
+                    playsInline
+                    preload="metadata"
+                  />
+                  
+                  {/* Custom Controls Overlay - only for non-YouTube videos */}
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 pointer-events-none">
+                    <div className="flex items-center justify-between text-white pointer-events-auto">
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={togglePlay}
+                          className="text-white hover:bg-white/20"
+                        >
+                          {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                        </Button>
+                        
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={toggleMute}
+                          className="text-white hover:bg-white/20"
+                        >
+                          {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                        </Button>
+                        
+                        <span className="text-sm">
+                          {formatTime(currentTime)} / {formatTime(duration)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Video Info */}
+        {videoData && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Video Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <h3 className="font-semibold text-lg">{videoData.title}</h3>
+                {videoData.description && (
+                  <p className="text-muted-foreground mt-1">{videoData.description}</p>
+                )}
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span className="font-medium">Duration:</span>
+                  <p className="text-muted-foreground">
+                    {videoData.duration ? `${Math.floor(videoData.duration / 60)}:${(videoData.duration % 60).toString().padStart(2, '0')}` : 'Unknown'}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-medium">Resolution:</span>
+                  <p className="text-muted-foreground">{videoData.resolution || 'Unknown'}</p>
+                </div>
+                <div>
+                  <span className="font-medium">File Size:</span>
+                  <p className="text-muted-foreground">
+                    {videoData.file_size ? `${(videoData.file_size / (1024 * 1024)).toFixed(2)} MB` : 'Unknown'}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-medium">Format:</span>
+                  <p className="text-muted-foreground">HLS (CMAF)</p>
+                </div>
+              </div>
+              
+              <div className="pt-4 border-t">
+                <p className="text-xs text-muted-foreground">
+                  This video is streamed using HLS (HTTP Live Streaming) technology for optimal playback across all devices.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  )
+}

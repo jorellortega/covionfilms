@@ -90,8 +90,10 @@ export default function StreamingControlPage() {
     }
   };
 
+  const [isDropboxLoading, setIsDropboxLoading] = useState(false);
+
   const handleDropboxConnect = async () => {
-    setIsLoading(true);
+    setIsDropboxLoading(true);
     try {
       // Simulate Dropbox connection
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -100,7 +102,7 @@ export default function StreamingControlPage() {
     } catch (error) {
       console.error('Dropbox connection failed:', error);
     } finally {
-      setIsLoading(false);
+      setIsDropboxLoading(false);
     }
   };
 
@@ -221,14 +223,17 @@ export default function StreamingControlPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                    <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">Supported Tiers</Label>
                     <div className="flex flex-wrap gap-2">
-                      {source.supportedTiers.map((tier) => (
+                      {(source.supportedTiers || []).map((tier) => (
                         <Badge key={tier} className={getTierColor(tier)}>
                           {tier}
                         </Badge>
                       ))}
+                      {(!source.supportedTiers || source.supportedTiers.length === 0) && (
+                        <span className="text-xs text-muted-foreground">No tiers configured</span>
+                      )}
                     </div>
                   </div>
 
@@ -240,13 +245,8 @@ export default function StreamingControlPage() {
                         placeholder="Enter API key"
                         value={source.apiKey || ''}
                         onChange={(e) => {
-                          setStreamingSources(prev => 
-                            prev.map(s => 
-                              s.id === source.id 
-                                ? { ...s, apiKey: e.target.value }
-                                : s
-                            )
-                          );
+                          // Update API key in database
+                          updateStreamingSource(source.id, { apiKey: e.target.value });
                         }}
                       />
                     </div>
@@ -441,9 +441,9 @@ export default function StreamingControlPage() {
                 {!dropboxConfig.isConnected ? (
                   <Button 
                     onClick={handleDropboxConnect} 
-                    disabled={isLoading || !dropboxConfig.appKey || !dropboxConfig.appSecret || !dropboxConfig.accessToken}
+                    disabled={isDropboxLoading || !dropboxConfig.appKey || !dropboxConfig.appSecret || !dropboxConfig.accessToken}
                   >
-                    {isLoading ? (
+                    {isDropboxLoading ? (
                       <>
                         <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                         Connecting...

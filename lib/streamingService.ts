@@ -12,6 +12,7 @@ export interface StreamingSource {
   maxQuality: string;
   bandwidth: string;
   costPerGB: number;
+  supportedTiers: string[];
 }
 
 export interface TierConfig {
@@ -69,18 +70,52 @@ export class StreamingService {
    * Load streaming sources from database
    */
   private async loadStreamingSources(): Promise<void> {
-    const { data, error } = await supabase
+    // First load all streaming sources
+    const { data: sourcesData, error: sourcesError } = await supabase
       .from('streaming_sources')
       .select('*')
-      .eq('is_active', true)
       .order('priority');
 
-    if (error) {
-      console.error('Error loading streaming sources:', error);
+    if (sourcesError) {
+      console.error('Error loading streaming sources:', sourcesError);
       return;
     }
 
-    this.streamingSources = data || [];
+    // Then load all tier relationships
+    const { data: tiersData, error: tiersError } = await supabase
+      .from('streaming_source_tiers')
+      .select('streaming_source_id, tier');
+
+    if (tiersError) {
+      console.error('Error loading streaming source tiers:', tiersError);
+      // Continue without tiers if there's an error
+    }
+
+    // Group tiers by source ID
+    const tiersBySourceId = new Map<string, string[]>();
+    (tiersData || []).forEach((rel: any) => {
+      const sourceId = rel.streaming_source_id;
+      if (!tiersBySourceId.has(sourceId)) {
+        tiersBySourceId.set(sourceId, []);
+      }
+      tiersBySourceId.get(sourceId)!.push(rel.tier);
+    });
+
+    // Map the data to include supportedTiers array
+    this.streamingSources = (sourcesData || []).map((source: any) => ({
+      id: source.id,
+      name: source.name,
+      type: source.type,
+      url: source.url,
+      apiKey: source.api_key,
+      region: source.region,
+      isActive: source.is_active,
+      priority: source.priority,
+      maxQuality: source.max_quality,
+      bandwidth: source.bandwidth,
+      costPerGB: parseFloat(source.cost_per_gb || 0),
+      supportedTiers: tiersBySourceId.get(source.id) || []
+    }));
   }
 
   /**
@@ -96,7 +131,15 @@ export class StreamingService {
       return;
     }
 
-    this.tierConfigs = data || [];
+    // Map database fields to interface fields
+    this.tierConfigs = (data || []).map((config: any) => ({
+      tier: config.tier,
+      streamingSourceId: config.streaming_source_id,
+      fallbackSourceId: config.fallback_source_id,
+      maxQuality: config.max_quality,
+      bandwidth: config.bandwidth,
+      cdnEnabled: config.cdn_enabled
+    }));
   }
 
   /**
@@ -314,7 +357,11 @@ export class StreamingService {
    */
   async getStreamingSources(): Promise<StreamingSource[]> {
     await this.loadStreamingSources();
-    return this.streamingSources;
+    // Ensure all sources have supportedTiers array, even if empty
+    return this.streamingSources.map(source => ({
+      ...source,
+      supportedTiers: source.supportedTiers || []
+    }));
   }
 
   /**
@@ -330,9 +377,23 @@ export class StreamingService {
    */
   async updateStreamingSource(sourceId: string, updates: Partial<StreamingSource>): Promise<boolean> {
     try {
+      // Map camelCase fields to snake_case for database
+      const dbUpdates: any = {};
+      if (updates.name !== undefined) dbUpdates.name = updates.name;
+      if (updates.type !== undefined) dbUpdates.type = updates.type;
+      if (updates.url !== undefined) dbUpdates.url = updates.url;
+      if (updates.apiKey !== undefined) dbUpdates.api_key = updates.apiKey;
+      if (updates.region !== undefined) dbUpdates.region = updates.region;
+      if (updates.isActive !== undefined) dbUpdates.is_active = updates.isActive;
+      if (updates.priority !== undefined) dbUpdates.priority = updates.priority;
+      if (updates.maxQuality !== undefined) dbUpdates.max_quality = updates.maxQuality;
+      if (updates.bandwidth !== undefined) dbUpdates.bandwidth = updates.bandwidth;
+      if (updates.costPerGB !== undefined) dbUpdates.cost_per_gb = updates.costPerGB;
+      // Note: supportedTiers is stored in streaming_source_tiers table, not in streaming_sources
+
       const { error } = await supabase
         .from('streaming_sources')
-        .update(updates)
+        .update(dbUpdates)
         .eq('id', sourceId);
 
       if (error) {
@@ -353,9 +414,27 @@ export class StreamingService {
    */
   async updateTierConfig(tier: string, updates: Partial<TierConfig>): Promise<boolean> {
     try {
+      // Map camelCase fields to snake_case for database
+      const dbUpdates: any = {};
+      if (updates.streamingSourceId !== undefined) {
+        dbUpdates.streaming_source_id = updates.streamingSourceId;
+      }
+      if (updates.fallbackSourceId !== undefined) {
+        dbUpdates.fallback_source_id = updates.fallbackSourceId;
+      }
+      if (updates.maxQuality !== undefined) {
+        dbUpdates.max_quality = updates.maxQuality;
+      }
+      if (updates.bandwidth !== undefined) {
+        dbUpdates.bandwidth = updates.bandwidth;
+      }
+      if (updates.cdnEnabled !== undefined) {
+        dbUpdates.cdn_enabled = updates.cdnEnabled;
+      }
+
       const { error } = await supabase
         .from('tier_configurations')
-        .update(updates)
+        .update(dbUpdates)
         .eq('tier', tier);
 
       if (error) {

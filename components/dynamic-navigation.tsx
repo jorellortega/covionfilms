@@ -25,6 +25,11 @@ export function DynamicNavigation() {
         <Link href="/dashboard" className="text-foreground hover:text-primary transition-colors">
           Dashboard
         </Link>
+        {user.role === 'admin' || user.role === 'management' ? (
+          <Link href="/manage-media" className="text-foreground hover:text-primary transition-colors">
+            Manage Media
+          </Link>
+        ) : null}
         {user.role === 'creator' || user.role === 'admin' || user.role === 'management' ? (
           <Link href="/creator" className="text-foreground hover:text-primary transition-colors">
             Creator
@@ -38,6 +43,11 @@ export function DynamicNavigation() {
         {user.role === 'admin' || user.role === 'management' ? (
           <Link href="/streaming-control" className="text-foreground hover:text-primary transition-colors">
             Streaming Control
+          </Link>
+        ) : null}
+        {user.role === 'admin' ? (
+          <Link href="/admin/dashboard-control" className="text-foreground hover:text-primary transition-colors">
+            Dashboard Control
           </Link>
         ) : null}
         <Link href="/subscribe" className="text-foreground hover:text-primary transition-colors">

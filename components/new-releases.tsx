@@ -74,46 +74,115 @@ export function NewReleases() {
     fetchNewReleases()
   }, [])
 
+  const getCoverImageUrl = (coverImagePath?: string): string | null => {
+    if (!coverImagePath) {
+      console.log('No coverImagePath provided to getCoverImageUrl')
+      return null
+    }
+    
+    console.log('getCoverImageUrl called with:', coverImagePath)
+    
+    // If it's already a full URL, return it
+    if (coverImagePath.startsWith('http://') || coverImagePath.startsWith('https://')) {
+      console.log('Returning full URL:', coverImagePath)
+      return coverImagePath
+    }
+    
+    // If it's a storage path, try both buckets
+    if (coverImagePath.startsWith('videos/') || coverImagePath.startsWith('covers/')) {
+      // Try both buckets
+      for (const bucketName of ['covionfilms', 'videos']) {
+        try {
+          const { data } = supabase.storage
+            .from(bucketName)
+            .getPublicUrl(coverImagePath)
+          const url = data?.publicUrl || null
+          if (url) {
+            console.log(`Converted storage path to URL using "${bucketName}":`, coverImagePath, '->', url)
+            return url
+          }
+        } catch (err) {
+          console.log(`Failed to get URL from "${bucketName}":`, err)
+        }
+      }
+      return null
+    }
+    
+    // If it starts with /, it's a relative path
+    if (coverImagePath.startsWith('/')) {
+      console.log('Returning relative path:', coverImagePath)
+      return coverImagePath
+    }
+    
+    // Try to get public URL from storage (assume it's a storage path without prefix)
+    // Try both buckets
+    for (const bucketName of ['covionfilms', 'videos']) {
+      try {
+        const { data } = supabase.storage
+          .from(bucketName)
+          .getPublicUrl(coverImagePath)
+        const url = data?.publicUrl || null
+        if (url) {
+          console.log(`Tried to get public URL from "${bucketName}":`, coverImagePath, '->', url)
+          return url
+        }
+      } catch (err) {
+        console.log(`Failed to get URL from "${bucketName}":`, err)
+      }
+    }
+    return null
+  }
+
   const fetchNewReleases = async () => {
     try {
       setLoading(true)
       
-      // First, try to fetch videos specifically set to new_releases
-      let { data, error } = await supabase
-        .from('videos')
-        .select('id, title, cover_image_path, dashboard_section, status, is_public')
-        .eq('dashboard_section', 'new_releases')
-        .eq('status', 'ready')
-        .eq('is_public', true)
-        .order('created_at', { ascending: false })
-        .limit(5)
-
-      if (error) {
-        console.error('Error fetching new releases:', error)
-        data = []
-      }
-
-      // If no videos are set to new_releases, fetch any recent videos
-      if (!data || data.length === 0) {
-        console.log('No videos set to new_releases, fetching recent videos...')
-        const { data: recentData, error: recentError } = await supabase
+      // Fetch from both videos and video_assets tables
+      const [videosData, videoAssetsData] = await Promise.all([
+        // Fetch from videos table
+        supabase
           .from('videos')
-          .select('id, title, cover_image_path, dashboard_section, status, is_public')
+          .select('id, title, cover_image_path, dashboard_section, status, is_public, created_at')
+          .eq('dashboard_section', 'new_releases')
+          .eq('status', 'ready')
+          .eq('is_public', true)
+          .order('created_at', { ascending: false })
+          .limit(5),
+        
+        // Fetch from video_assets table
+        supabase
+          .from('video_assets')
+          .select('id, title, cover_image_path, dashboard_section, status, is_public, created_at')
+          .eq('dashboard_section', 'new_releases')
           .eq('status', 'ready')
           .eq('is_public', true)
           .order('created_at', { ascending: false })
           .limit(5)
+      ])
 
-        if (recentError) {
-          console.error('Error fetching recent videos:', recentError)
-          data = []
-        } else {
-          data = recentData || []
-        }
-      }
+      // Combine results
+      let allVideos: Video[] = [
+        ...(videosData.data || []),
+        ...(videoAssetsData.data || [])
+      ]
 
-      console.log('Fetched videos:', data)
-      setVideos(data || [])
+      // Sort by created_at and limit to 5
+      allVideos.sort((a, b) => 
+        new Date((b as any).created_at || 0).getTime() - new Date((a as any).created_at || 0).getTime()
+      )
+      allVideos = allVideos.slice(0, 5)
+
+      // Only show videos explicitly set to new_releases section
+      // No fallback to recent videos - only show what's in the new_releases section
+
+      // Convert cover image paths to public URLs
+      const videosWithCoverUrls = allVideos.map(video => ({
+        ...video,
+        cover_image_path: getCoverImageUrl(video.cover_image_path) || undefined
+      }))
+
+      console.log('Fetched videos:', videosWithCoverUrls)
+      setVideos(videosWithCoverUrls)
     } catch (error) {
       console.error('Error fetching new releases:', error)
       setVideos([])
@@ -276,6 +345,12 @@ export function NewReleases() {
                       width={150}
                       height={225}
                       className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
+                      unoptimized
+                      onError={(e) => {
+                        // Fallback to placeholder if image fails to load
+                        const target = e.target as HTMLImageElement
+                        target.src = "/placeholder.svg"
+                      }}
                     />
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full space-y-2 p-4">

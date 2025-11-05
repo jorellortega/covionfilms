@@ -19,6 +19,7 @@ export default function SignUpPage() {
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [subscription, setSubscription] = useState("free")
+  const [role, setRole] = useState("user")
   const [isLoading, setIsLoading] = useState(false)
   const router = useRouter()
 
@@ -53,7 +54,7 @@ export default function SignUpPage() {
         options: {
           data: {
             name: name,
-            role: 'user', // Default role for new users
+            role: role, // Use selected role
           }
         }
       })
@@ -74,7 +75,7 @@ export default function SignUpPage() {
             name: name,
             email: email,
             password_hash: 'auth_managed', // Supabase handles password hashing
-            role: 'user'
+            role: role
           })
 
         if (profileError) {
@@ -219,6 +220,24 @@ export default function SignUpPage() {
                   <SelectItem value="family">Family - 4K, 5 devices, no ads ($15/month)</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="role">User Role</Label>
+              <Select value={role} onValueChange={setRole} disabled={isLoading}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">User - View content, comment, rate</SelectItem>
+                  <SelectItem value="creator">Creator - Upload content, manage own videos</SelectItem>
+                  <SelectItem value="management">Management - Manage content, view analytics</SelectItem>
+                  <SelectItem value="admin">Admin - Full system control, upload anything</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Choose the appropriate role for this user. Admin users have full system access.
+              </p>
             </div>
             <Button
               type="submit"
