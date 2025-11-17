@@ -46,9 +46,17 @@ export function DynamicNavigation() {
           </Link>
         ) : null}
         {user.role === 'admin' ? (
-          <Link href="/admin/dashboard-control" className="text-foreground hover:text-primary transition-colors">
-            Dashboard Control
-          </Link>
+          <>
+            <Link href="/admin/dashboard-control" className="text-foreground hover:text-primary transition-colors">
+              Dashboard Control
+            </Link>
+            <Link href="/admin/ai-settings" className="text-foreground hover:text-primary transition-colors">
+              AI Settings
+            </Link>
+            <Link href="/admin/ai-info" className="text-foreground hover:text-primary transition-colors">
+              AI Info
+            </Link>
+          </>
         ) : null}
         <Link href="/subscribe" className="text-foreground hover:text-primary transition-colors">
           Subscribe
@@ -89,12 +97,6 @@ export function DynamicNavigation() {
       </Link>
       <Link href="/creator" className="text-foreground hover:text-primary transition-colors">
         Creator
-      </Link>
-      <Link href="/upload" className="text-foreground hover:text-primary transition-colors">
-        Upload
-      </Link>
-      <Link href="/streaming-control" className="text-foreground hover:text-primary transition-colors">
-        Streaming Control
       </Link>
       <Link href="/login" className="text-foreground hover:text-primary transition-colors">
         Login

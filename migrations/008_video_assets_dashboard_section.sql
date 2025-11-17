@@ -26,3 +26,4 @@ CREATE INDEX IF NOT EXISTS idx_video_assets_genre ON video_assets(genre);
 -- Add comment
 COMMENT ON COLUMN video_assets.dashboard_section IS 'Controls which dashboard section the video appears in (featured, new_releases, top_movies, trending, coming_soon, none)';
 
+
