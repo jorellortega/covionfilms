@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/components/ui/use-toast"
-import { Pencil, Trash2, Eye, Play, Download, ExternalLink, Loader2, Film, Settings, ImageIcon, X } from "lucide-react"
+import { Pencil, Trash2, Eye, Play, Download, ExternalLink, Loader2, Film, Settings, ImageIcon, X, Star } from "lucide-react"
 import Image from "next/image"
 import { useAuth } from "@/components/auth-provider"
 import { supabase } from "@/lib/supabaseClient"
@@ -41,14 +41,14 @@ interface Video {
   source?: 'videos' | 'video_assets' // Track which table the video comes from
 }
 
-// Dashboard sections available for assignment
+// Dashboard sections — controls where videos appear on the home dashboard
 const DASHBOARD_SECTIONS = [
-  { value: 'featured', label: 'Featured Movies', description: 'Curated content at the top' },
-  { value: 'new_releases', label: 'New Releases', description: 'Latest uploads section' },
-  { value: 'top_movies', label: 'Top Movies', description: 'Most popular videos' },
-  { value: 'trending', label: 'Trending Now', description: 'Currently popular content' },
-  { value: 'coming_soon', label: 'Coming Soon', description: 'Upcoming releases' },
-  { value: 'none', label: 'No Section', description: 'Hidden from dashboard' }
+  { value: 'new_releases', label: 'New Releases', description: 'Main top player + new releases row' },
+  { value: 'featured', label: 'Featured Movies', description: 'Featured section (optional)' },
+  { value: 'top_movies', label: 'Top Movies', description: 'Top 10 Movies section' },
+  { value: 'trending', label: 'Trending Now', description: 'Trending reels row' },
+  { value: 'coming_soon', label: 'Coming Soon', description: 'Coming soon section' },
+  { value: 'none', label: 'Hidden', description: 'Not shown on dashboard' }
 ]
 
 export default function ManageMediaPage() {
@@ -417,8 +417,8 @@ export default function ManageMediaPage() {
       ))
 
       toast({
-        title: "Section Updated",
-        description: `Video moved to ${DASHBOARD_SECTIONS.find(s => s.value === newSection)?.label || 'No Section'}.`,
+        title: "Dashboard Updated",
+        description: `"${video.title}" is now in ${DASHBOARD_SECTIONS.find(s => s.value === newSection)?.label || 'Hidden'}.`,
       })
     } catch (error: any) {
       console.error('Error updating section:', error)
@@ -426,6 +426,34 @@ export default function ManageMediaPage() {
         title: "Error",
         description: "Failed to update video section. Please try again.",
         variant: "destructive"
+      })
+    }
+  }
+
+  const handleSetAsMainPlayer = async (video: Video) => {
+    try {
+      const table = video.source || 'videos'
+
+      const { error } = await supabase
+        .from(table)
+        .update({ dashboard_section: 'new_releases', is_public: true })
+        .eq('id', video.id)
+
+      if (error) throw error
+
+      setVideos(videos.map(v =>
+        v.id === video.id ? { ...v, dashboard_section: 'new_releases', is_public: true } : v
+      ))
+
+      toast({
+        title: "Main Player Updated",
+        description: `"${video.title}" will play in the top hero player on the dashboard.`,
+      })
+    } catch (error: unknown) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to set main player",
+        variant: "destructive",
       })
     }
   }
@@ -557,9 +585,24 @@ export default function ManageMediaPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8 text-center bg-gradient-to-r from-primary to-[#8e2de2] text-transparent bg-clip-text">
+      <h1 className="text-3xl font-bold mb-4 text-center bg-gradient-to-r from-primary to-[#8e2de2] text-transparent bg-clip-text">
         Manage Your Media
       </h1>
+
+      <Card className="mb-6 border-primary/30 bg-primary/5">
+        <CardContent className="pt-6 space-y-3 text-sm">
+          <p className="font-medium text-primary">Main top player (hero video)</p>
+          <p className="text-muted-foreground">
+            Click the <strong>star button</strong> on a video, or set <strong>Show on Dashboard</strong> to <strong>New Releases</strong>.
+            Video must be <strong>Public</strong> and <strong>Ready</strong>.
+          </p>
+          <ul className="grid sm:grid-cols-2 gap-2 text-muted-foreground">
+            <li><strong>★ New Releases</strong> → main top player</li>
+            <li><strong>Top Movies</strong> → top 10 section</li>
+            <li><strong>Hidden</strong> → not on dashboard</li>
+          </ul>
+        </CardContent>
+      </Card>
       
       <Card>
         <CardHeader>
@@ -630,7 +673,7 @@ export default function ManageMediaPage() {
                   <TableHead>Quality</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Visibility</TableHead>
-                  <TableHead>Dashboard Section</TableHead>
+                  <TableHead>Show on Dashboard</TableHead>
                   <TableHead>Views</TableHead>
                   <TableHead>Upload Date</TableHead>
                   <TableHead>Actions</TableHead>
@@ -742,6 +785,16 @@ export default function ManageMediaPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-2">
+                        <Button
+                          variant={video.dashboard_section === 'new_releases' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => handleSetAsMainPlayer(video)}
+                          title="Show in main top player on dashboard"
+                          className={video.dashboard_section === 'new_releases' ? 'bg-primary' : ''}
+                        >
+                          <Star className={`h-4 w-4 mr-1 ${video.dashboard_section === 'new_releases' ? 'fill-current' : ''}`} />
+                          Main Player
+                        </Button>
                         <Button 
                           variant="ghost" 
                           size="icon" 

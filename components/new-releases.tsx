@@ -5,8 +5,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Film, Clock, Star, RefreshCw } from "lucide-react"
 import Image from "next/image"
-import { supabase } from "@/lib/supabaseClient"
 import { useRouter } from "next/navigation"
+import { fetchDashboardVideos } from "@/lib/dashboard-videos"
 
 interface Video {
   id: string
@@ -74,115 +74,11 @@ export function NewReleases() {
     fetchNewReleases()
   }, [])
 
-  const getCoverImageUrl = (coverImagePath?: string): string | null => {
-    if (!coverImagePath) {
-      console.log('No coverImagePath provided to getCoverImageUrl')
-      return null
-    }
-    
-    console.log('getCoverImageUrl called with:', coverImagePath)
-    
-    // If it's already a full URL, return it
-    if (coverImagePath.startsWith('http://') || coverImagePath.startsWith('https://')) {
-      console.log('Returning full URL:', coverImagePath)
-      return coverImagePath
-    }
-    
-    // If it's a storage path, try both buckets
-    if (coverImagePath.startsWith('videos/') || coverImagePath.startsWith('covers/')) {
-      // Try both buckets
-      for (const bucketName of ['covionfilms', 'videos']) {
-        try {
-          const { data } = supabase.storage
-            .from(bucketName)
-            .getPublicUrl(coverImagePath)
-          const url = data?.publicUrl || null
-          if (url) {
-            console.log(`Converted storage path to URL using "${bucketName}":`, coverImagePath, '->', url)
-            return url
-          }
-        } catch (err) {
-          console.log(`Failed to get URL from "${bucketName}":`, err)
-        }
-      }
-      return null
-    }
-    
-    // If it starts with /, it's a relative path
-    if (coverImagePath.startsWith('/')) {
-      console.log('Returning relative path:', coverImagePath)
-      return coverImagePath
-    }
-    
-    // Try to get public URL from storage (assume it's a storage path without prefix)
-    // Try both buckets
-    for (const bucketName of ['covionfilms', 'videos']) {
-      try {
-        const { data } = supabase.storage
-          .from(bucketName)
-          .getPublicUrl(coverImagePath)
-        const url = data?.publicUrl || null
-        if (url) {
-          console.log(`Tried to get public URL from "${bucketName}":`, coverImagePath, '->', url)
-          return url
-        }
-      } catch (err) {
-        console.log(`Failed to get URL from "${bucketName}":`, err)
-      }
-    }
-    return null
-  }
-
   const fetchNewReleases = async () => {
     try {
       setLoading(true)
-      
-      // Fetch from both videos and video_assets tables
-      const [videosData, videoAssetsData] = await Promise.all([
-        // Fetch from videos table
-        supabase
-          .from('videos')
-          .select('id, title, cover_image_path, dashboard_section, status, is_public, created_at')
-          .eq('dashboard_section', 'new_releases')
-          .eq('status', 'ready')
-          .eq('is_public', true)
-          .order('created_at', { ascending: false })
-          .limit(5),
-        
-        // Fetch from video_assets table
-        supabase
-          .from('video_assets')
-          .select('id, title, cover_image_path, dashboard_section, status, is_public, created_at')
-          .eq('dashboard_section', 'new_releases')
-          .eq('status', 'ready')
-          .eq('is_public', true)
-          .order('created_at', { ascending: false })
-          .limit(5)
-      ])
-
-      // Combine results
-      let allVideos: Video[] = [
-        ...(videosData.data || []),
-        ...(videoAssetsData.data || [])
-      ]
-
-      // Sort by created_at and limit to 5
-      allVideos.sort((a, b) => 
-        new Date((b as any).created_at || 0).getTime() - new Date((a as any).created_at || 0).getTime()
-      )
-      allVideos = allVideos.slice(0, 5)
-
-      // Only show videos explicitly set to new_releases section
-      // No fallback to recent videos - only show what's in the new_releases section
-
-      // Convert cover image paths to public URLs
-      const videosWithCoverUrls = allVideos.map(video => ({
-        ...video,
-        cover_image_path: getCoverImageUrl(video.cover_image_path) || undefined
-      }))
-
-      console.log('Fetched videos:', videosWithCoverUrls)
-      setVideos(videosWithCoverUrls)
+      const allVideos = await fetchDashboardVideos('new_releases', 5)
+      setVideos(allVideos)
     } catch (error) {
       console.error('Error fetching new releases:', error)
       setVideos([])
@@ -206,10 +102,7 @@ export function NewReleases() {
   }
 
   const handleVideoClick = (videoId: string) => {
-    // Only navigate if it's a real video (not a mock)
     if (!videoId.startsWith('mock-')) {
-      console.log('Clicking on video with ID:', videoId)
-      console.log('Video details:', videos.find(v => v.id === videoId))
       router.push(`/watch/${videoId}`)
     }
   }
@@ -220,7 +113,9 @@ export function NewReleases() {
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-primary">New Releases</h2>
+        <h2 className="text-2xl font-bold tracking-wider uppercase bg-gradient-to-r from-[#00ff87] to-[#60efff] text-transparent bg-clip-text futuristic-text">
+          New Releases
+        </h2>
         <div className="flex items-center gap-4">
           <div className="text-sm text-muted-foreground">
             {videos.length > 0 ? (
@@ -253,37 +148,6 @@ export function NewReleases() {
           </div>
         </div>
       )}
-      
-      {/* Debug info - remove this later */}
-      {videos.length > 0 && (
-        <div className="bg-gray-800 p-3 rounded text-xs text-muted-foreground">
-          <div className="font-medium mb-2">Debug: Fetched Videos</div>
-          {videos.map((video, index) => (
-            <div key={video.id} className="flex gap-4 mb-1">
-              <span>{index + 1}.</span>
-              <span className="text-white">{video.title}</span>
-              <span>Section: {video.dashboard_section || 'none'}</span>
-              <span>Status: {video.status}</span>
-              <span>Public: {video.is_public ? 'Yes' : 'No'}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      
-      {/* Debug display items */}
-      <div className="bg-gray-800 p-3 rounded text-xs text-muted-foreground">
-        <div className="font-medium mb-2">Debug: Display Items (what user sees)</div>
-        {displayItems.map((item, index) => (
-          <div key={index} className="flex gap-4 mb-1">
-            <span>{index + 1}.</span>
-            <span className="text-white">
-              {('isMock' in item) ? `Mock: ${(item as MockRelease).title}` : `Video: ${(item as Video).title}`}
-            </span>
-            <span>ID: {('isMock' in item) ? (item as MockRelease).id : (item as Video).id}</span>
-            <span>Type: {('isMock' in item) ? 'Mock' : 'Real'}</span>
-          </div>
-        ))}
-      </div>
       
       <ScrollArea className="w-full whitespace-nowrap rounded-md border border-gray-700">
         <div className="flex w-max space-x-4 p-4">

@@ -6,8 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Loader2 } from "lucide-react"
+import { Loader2, LogOut } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 interface UserProfile {
   name: string
@@ -20,7 +21,8 @@ interface UserProfile {
 }
 
 export default function AccountPage() {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
+  const router = useRouter()
   const [profile, setProfile] = useState<UserProfile>({
     name: user?.name || "Guest",
     email: user?.email || "",
@@ -120,15 +122,28 @@ export default function AccountPage() {
               </span>
             </div>
           )}
-          <div className="pt-4 flex justify-between">
+          <div className="pt-4 flex flex-wrap gap-3 justify-between">
             <Link href="/settings">
               <Button variant="outline">Edit Profile</Button>
             </Link>
-            <Link href="/subscribe">
-              <Button variant="default" className="bg-gradient-to-r from-primary to-[#8e2de2] text-white">
-                {profile.subscription === "free" ? "Upgrade Account" : "Manage Subscription"}
+            <div className="flex flex-wrap gap-3">
+              <Button
+                variant="outline"
+                className="text-red-400 border-red-400/50 hover:bg-red-500/10 hover:text-red-300"
+                onClick={async () => {
+                  await logout()
+                  router.push("/login")
+                }}
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
               </Button>
-            </Link>
+              <Link href="/subscribe">
+                <Button variant="default" className="bg-gradient-to-r from-primary to-[#8e2de2] text-white">
+                  {profile.subscription === "free" ? "Upgrade Account" : "Manage Subscription"}
+                </Button>
+              </Link>
+            </div>
           </div>
         </CardContent>
       </Card>

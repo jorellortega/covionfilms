@@ -38,7 +38,6 @@ export function useDashboardVisibility() {
       })
 
       setVisibility(visibilityMap)
-      console.log('📊 Dashboard visibility loaded:', visibilityMap)
     } catch (error) {
       console.error('Error fetching dashboard visibility:', error)
       // Default to all visible if there's an error
@@ -55,19 +54,7 @@ export function useDashboardVisibility() {
     }
     // If section not in database, default to visible
     // If explicitly set to false, return false
-    const result = visibility[sectionName] !== false
-    
-    // Only log for new_releases to debug the issue
-    if (sectionName === 'new_releases') {
-      console.log(`👁️ Visibility check for "${sectionName}":`, {
-        inMap: sectionName in visibility,
-        value: visibility[sectionName],
-        result,
-        allVisibility: visibility
-      })
-    }
-    
-    return result
+    return visibility[sectionName] !== false
   }
 
   return { isVisible, loading, refresh: fetchVisibility }

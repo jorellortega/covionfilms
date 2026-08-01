@@ -1,72 +1,48 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Film, ViewIcon } from "lucide-react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
-
-const INITIAL_TOP_MOVIES = [
-  {
-    id: 1,
-    title: "Firepit Chronicles",
-    imageUrl:
-      "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Firepit-Cover-cEkwphXNyfxfQa7oe6FiuWpdzdjKeU.png",
-  },
-  // Placeholder slots for remaining top movies
-  ...Array(9)
-    .fill(null)
-    .map((_, index) => ({
-      id: index + 2,
-      title: `Coming Soon ${index + 2}`,
-      imageUrl: null,
-    })),
-]
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { useDashboardVideos } from "@/hooks/use-dashboard-videos"
 
 interface TopMoviesProps {
   shuffleMode: boolean
 }
 
 export function TopMovies({ shuffleMode }: TopMoviesProps) {
-  const [topMovies, setTopMovies] = useState(INITIAL_TOP_MOVIES)
+  const { videos, loading } = useDashboardVideos("top_movies", 10)
   const [viewMode, setViewMode] = useState<"scroll" | "grid" | "list">("scroll")
+  const router = useRouter()
 
-  useEffect(() => {
-    if (shuffleMode) {
-      const shuffled = [...INITIAL_TOP_MOVIES].sort(() => Math.random() - 0.5)
-      setTopMovies(shuffled)
-    } else {
-      setTopMovies(INITIAL_TOP_MOVIES)
-    }
-  }, [shuffleMode])
+  const topMovies = shuffleMode ? [...videos].sort(() => Math.random() - 0.5) : videos
 
-  const toggleViewMode = () => {
-    setViewMode((current) => {
-      if (current === "scroll") return "grid"
-      if (current === "grid") return "list"
-      return "scroll"
-    })
+  const handleMovieClick = (id: string) => {
+    router.push(`/watch/${id}`)
   }
 
   const renderGridView = () => (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 p-4">
       {topMovies.map((movie, index) => (
-        <div key={movie.id} className="relative group">
+        <div key={movie.id} className="relative group cursor-pointer" onClick={() => handleMovieClick(movie.id)}>
           <Card className="w-full aspect-[2/3] bg-card overflow-hidden border border-gray-800 transition-transform duration-300 ease-in-out transform group-hover:scale-105">
-            <CardContent className="p-0 w-full h-full">
-              {movie.imageUrl ? (
+            <CardContent className="p-0 w-full h-full relative">
+              {movie.cover_image_path ? (
                 <Image
-                  src={movie.imageUrl || "/placeholder.svg"}
+                  src={movie.cover_image_path}
                   alt={movie.title}
-                  layout="fill"
-                  objectFit="cover"
-                  className="transition-opacity duration-300 group-hover:opacity-75"
+                  fill
+                  className="object-cover transition-opacity duration-300 group-hover:opacity-75"
+                  unoptimized
                 />
               ) : (
                 <div className="flex flex-col items-center justify-center h-full space-y-2 p-4">
                   <Film className="h-12 w-12 text-muted-foreground opacity-50" />
-                  <p className="text-center text-sm text-muted-foreground opacity-50">Movie {movie.id}</p>
+                  <p className="text-center text-sm text-muted-foreground opacity-50">{movie.title}</p>
                 </div>
               )}
             </CardContent>
@@ -85,21 +61,22 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
       {topMovies.map((movie) => (
         <Card
           key={movie.id}
-          className={`w-[150px] h-[225px] flex-shrink-0 bg-card relative overflow-hidden border border-gray-800 glass`}
+          className="w-[150px] h-[225px] flex-shrink-0 bg-card relative overflow-hidden border border-gray-800 glass cursor-pointer hover:border-primary/50"
+          onClick={() => handleMovieClick(movie.id)}
         >
-          <CardContent className="p-0 w-full h-full">
-            {movie.imageUrl ? (
+          <CardContent className="p-0 w-full h-full relative">
+            {movie.cover_image_path ? (
               <Image
-                src={movie.imageUrl || "/placeholder.svg"}
+                src={movie.cover_image_path}
                 alt={movie.title}
-                width={150}
-                height={225}
-                className="object-cover w-full h-full"
+                fill
+                className="object-cover"
+                unoptimized
               />
             ) : (
               <div className="flex flex-col items-center justify-center h-full space-y-2 p-4">
                 <Film className="h-12 w-12 text-muted-foreground opacity-50" />
-                <p className="text-center text-sm text-muted-foreground opacity-50">Movie {movie.id}</p>
+                <p className="text-center text-sm text-muted-foreground opacity-50">{movie.title}</p>
               </div>
             )}
           </CardContent>
@@ -114,15 +91,19 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
   const renderListView = () => (
     <div className="space-y-4 p-4">
       {topMovies.map((movie, index) => (
-        <div key={movie.id} className="flex items-center space-x-4 p-2 bg-card rounded-md border border-gray-800">
+        <div
+          key={movie.id}
+          className="flex items-center space-x-4 p-2 bg-card rounded-md border border-gray-800 cursor-pointer hover:border-primary/50"
+          onClick={() => handleMovieClick(movie.id)}
+        >
           <div className="w-16 h-24 relative flex-shrink-0">
-            {movie.imageUrl ? (
+            {movie.cover_image_path ? (
               <Image
-                src={movie.imageUrl || "/placeholder.svg"}
+                src={movie.cover_image_path}
                 alt={movie.title}
-                layout="fill"
-                objectFit="cover"
-                className="rounded-md"
+                fill
+                className="object-cover rounded-md"
+                unoptimized
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-muted rounded-md">
@@ -146,7 +127,13 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
           Top 10 Movies
         </h2>
         <Button
-          onClick={toggleViewMode}
+          onClick={() =>
+            setViewMode((current) => {
+              if (current === "scroll") return "grid"
+              if (current === "grid") return "list"
+              return "scroll"
+            })
+          }
           variant="outline"
           size="sm"
           className="bg-black/50 border-primary text-primary hover:bg-primary hover:text-black transition-colors duration-300"
@@ -157,12 +144,23 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
           </span>
         </Button>
       </div>
-      <ScrollArea className="w-full rounded-md border border-gray-800">
-        {viewMode === "grid" && renderGridView()}
-        {viewMode === "scroll" && renderScrollView()}
-        {viewMode === "list" && renderListView()}
-      </ScrollArea>
+
+      {loading ? (
+        <p className="text-muted-foreground text-center py-8">Loading top movies...</p>
+      ) : topMovies.length === 0 ? (
+        <div className="text-center py-8 border border-gray-800 rounded-lg">
+          <p className="text-muted-foreground mb-2">No top movies yet.</p>
+          <p className="text-sm text-muted-foreground">
+            In <Link href="/manage-media" className="text-primary underline">Manage Media</Link>, set a video&apos;s dashboard section to <strong>Top Movies</strong>.
+          </p>
+        </div>
+      ) : (
+        <ScrollArea className="w-full rounded-md border border-gray-800">
+          {viewMode === "grid" && renderGridView()}
+          {viewMode === "scroll" && renderScrollView()}
+          {viewMode === "list" && renderListView()}
+        </ScrollArea>
+      )}
     </section>
   )
 }
-

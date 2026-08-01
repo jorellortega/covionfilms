@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import Hls from 'hls.js'
+import {
+  getCloudflareStreamIframeUrl,
+  isCloudflareStreamUrl,
+  isDropboxUrl,
+  isYouTubeUrl,
+  toDropboxDirectUrl,
+  toYouTubeEmbedUrl,
+} from '@/lib/stream-url'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Play, Pause, Volume2, VolumeX } from 'lucide-react'
@@ -62,26 +70,21 @@ export default function WatchPage() {
 
         console.log('📹 Video manifest URL:', manifestUrl)
 
-        // Check if this is a YouTube URL and convert to embed format if needed
-        const isYouTube = manifestUrl.includes('youtube.com') || manifestUrl.includes('youtu.be')
+        const isYouTube = isYouTubeUrl(manifestUrl)
+        const isCloudflareStream = isCloudflareStreamUrl(manifestUrl) || Boolean(data.cloudflare_stream_uid)
         
+        if (data.cloudflare_stream_uid) {
+          setVideoData({
+            ...data,
+            cloudflare_iframe_url: getCloudflareStreamIframeUrl(data.cloudflare_stream_uid),
+          })
+          setLoading(false)
+          return
+        }
+
         if (isYouTube) {
-          // Convert YouTube URL to embed format if needed
-          if (!manifestUrl.includes('youtube.com/embed/')) {
-            const youtubeRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/
-            const match = manifestUrl.match(youtubeRegex)
-            
-            if (match && match[1]) {
-              manifestUrl = `https://www.youtube.com/embed/${match[1]}`
-              console.log('✅ Converted YouTube URL to embed format:', manifestUrl)
-            } else if (manifestUrl.includes('youtube.com/embed/')) {
-              // Already embed format
-              console.log('✅ YouTube URL already in embed format')
-            } else {
-              // Couldn't parse, try to use as-is
-              console.warn('⚠️ Could not parse YouTube URL:', manifestUrl)
-            }
-          }
+          manifestUrl = toYouTubeEmbedUrl(manifestUrl)
+          console.log('✅ Using YouTube embed URL:', manifestUrl)
           
           // Update videoData with the embed URL
           setVideoData({ ...data, manifest_url: manifestUrl })
@@ -91,44 +94,16 @@ export default function WatchPage() {
         }
 
         // Check if this is a Dropbox URL and convert to direct download if needed
-        const isDropbox = manifestUrl.includes('dropbox.com')
-        console.log('🔍 Checking URL type - isDropbox:', isDropbox, 'URL:', manifestUrl)
+        const isDropbox = isDropboxUrl(manifestUrl)
+        console.log('🔍 Checking URL type - isDropbox:', isDropbox, 'isCloudflareStream:', isCloudflareStream, 'URL:', manifestUrl)
         
         if (isDropbox) {
           console.log('📦 Processing Dropbox URL...')
           const originalUrl = manifestUrl
-          
-          // Convert Dropbox share link to direct download URL
-          // Dropbox share links can be:
-          // - https://www.dropbox.com/s/xxxxx/file.mp4?dl=0
-          // - https://www.dropbox.com/scl/fi/xxxxx/file.mp4?rlkey=xxx&dl=0
-          // Convert to: ...?dl=1 or ...&dl=1
-          
-          // Replace ?dl=0 with ?dl=1
-          if (manifestUrl.includes('?dl=0')) {
-            manifestUrl = manifestUrl.replace('?dl=0', '?dl=1')
-            console.log('✅ Converted Dropbox URL from ?dl=0 to ?dl=1')
-            console.log('   Original:', originalUrl)
-            console.log('   Converted:', manifestUrl)
-          } 
-          // Replace &dl=0 with &dl=1 (for URLs with rlkey parameter)
-          else if (manifestUrl.includes('&dl=0')) {
-            manifestUrl = manifestUrl.replace('&dl=0', '&dl=1')
-            console.log('✅ Converted Dropbox URL from &dl=0 to &dl=1')
-            console.log('   Original:', originalUrl)
-            console.log('   Converted:', manifestUrl)
-          }
-          // If dl parameter exists but is already 1, keep it
-          else if (manifestUrl.includes('dl=1')) {
-            console.log('ℹ️ Dropbox URL already has dl=1 parameter:', manifestUrl)
-          }
-          // Add dl=1 if no dl parameter exists
-          else {
-            manifestUrl = manifestUrl + (manifestUrl.includes('?') ? '&' : '?') + 'dl=1'
-            console.log('✅ Added dl=1 to Dropbox URL')
-            console.log('   Original:', originalUrl)
-            console.log('   Converted:', manifestUrl)
-          }
+          manifestUrl = toDropboxDirectUrl(manifestUrl)
+          console.log('✅ Converted Dropbox URL')
+          console.log('   Original:', originalUrl)
+          console.log('   Converted:', manifestUrl)
           
           // Update videoData with the converted URL
           setVideoData({ ...data, manifest_url: manifestUrl })
@@ -152,7 +127,7 @@ export default function WatchPage() {
               return
             }
 
-            if (url.includes('.m3u8') || url.includes('application/vnd.apple.mpegurl')) {
+            if (url.includes('.m3u8') || url.includes('application/vnd.apple.mpegurl') || isCloudflareStreamUrl(url)) {
               // HLS stream
               if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
                 // Safari iOS native HLS support
@@ -390,7 +365,18 @@ export default function WatchPage() {
           </CardHeader>
           <CardContent>
             <div className="relative bg-black rounded-lg overflow-hidden">
-              {videoData?.manifest_url && 
+              {videoData?.cloudflare_stream_uid ? (
+                <div className="aspect-video w-full">
+                  <iframe
+                    src={videoData.cloudflare_iframe_url || getCloudflareStreamIframeUrl(videoData.cloudflare_stream_uid)}
+                    className="w-full h-full border-0"
+                    allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+                    allowFullScreen
+                    title={videoData.title}
+                    onLoad={() => setLoading(false)}
+                  />
+                </div>
+              ) : videoData?.manifest_url && 
               (videoData.manifest_url.includes('youtube.com/embed/') || 
                videoData.manifest_url.includes('youtube.com') || 
                videoData.manifest_url.includes('youtu.be')) ? (
@@ -578,13 +564,19 @@ export default function WatchPage() {
                 </div>
                 <div>
                   <span className="font-medium">Format:</span>
-                  <p className="text-muted-foreground">HLS (CMAF)</p>
+                  <p className="text-muted-foreground">
+                    {videoData.cloudflare_stream_uid || isCloudflareStreamUrl(videoData.manifest_url || '')
+                      ? 'Cloudflare Stream'
+                      : 'HLS'}
+                  </p>
                 </div>
               </div>
               
               <div className="pt-4 border-t">
                 <p className="text-xs text-muted-foreground">
-                  This video is streamed using HLS (HTTP Live Streaming) technology for optimal playback across all devices.
+                  {videoData.cloudflare_stream_uid || isCloudflareStreamUrl(videoData.manifest_url || '')
+                    ? 'This video is delivered through Cloudflare Stream for adaptive playback across all devices.'
+                    : 'This video is streamed using HLS (HTTP Live Streaming) technology for optimal playback across all devices.'}
                 </p>
               </div>
             </CardContent>

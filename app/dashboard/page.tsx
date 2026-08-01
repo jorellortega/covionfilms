@@ -6,6 +6,7 @@ import { MovieTrailers } from "@/components/movie-trailers"
 import { TopMovies } from "@/components/top-movies"
 import { TopCreators } from "@/components/top-creators"
 import { ReelsRow } from "@/components/reels-row"
+import { NewReleases } from "@/components/new-releases"
 import { UnseenMovies } from "@/components/unseen-movies"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
@@ -15,6 +16,9 @@ import { AIContent } from "@/components/ai-content"
 import { Film, Music, Crown, Star, Zap, Users } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useDashboardVisibility } from "@/hooks/use-dashboard-visibility"
+
+// UNDO: Set to true to restore the fixed bottom Vee / Clips / Music buttons on the dashboard.
+const SHOW_BOTTOM_NAV_BUTTONS = false
 
 export default function DashboardPage() {
   const [shuffleMode, setShuffleMode] = useState<"reels" | null>(null)
@@ -142,13 +146,17 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {isVisible('new_releases') && (
+          <NewReleases />
+        )}
+
         {isVisible('top_movies') && (
           <TopMovies shuffleMode={shuffleMode === "reels"} />
         )}
         {isVisible('ai_content') && (
           <AIContent />
         )}
-        {(isVisible('trending_reels') || isVisible('new_releases')) && (
+        {isVisible('trending_reels') && (
           <ReelsRow shuffleMode={shuffleMode === "reels"} />
         )}
         {isVisible('top_creators') && (
@@ -183,7 +191,9 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {(isVisible('vee_reels') || isVisible('clips') || isVisible('music')) && (
+      {/* UNDO: Bottom nav — set SHOW_BOTTOM_NAV_BUTTONS = true at top of file to restore Vee, Clips, Music */}
+      {SHOW_BOTTOM_NAV_BUTTONS &&
+        (isVisible('vee_reels') || isVisible('clips') || isVisible('music')) && (
         <div className="fixed bottom-4 inset-x-0 flex justify-center items-center space-x-4 z-40">
           {isVisible('vee_reels') && (
             <Link href="/reel-mode">

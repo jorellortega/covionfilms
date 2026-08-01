@@ -1,11 +1,20 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { LogOut } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { useAuth } from "@/components/auth-provider"
 import { FEATURES } from "@/config/features"
 
 export function DynamicNavigation() {
-  const { user, isLoading } = useAuth()
+  const { user, isLoading, logout } = useAuth()
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    await logout()
+    router.push("/login")
+  }
 
   // Show loading state
   if (isLoading) {
@@ -84,6 +93,15 @@ export function DynamicNavigation() {
           <span className="text-xs px-2 py-1 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white">
             {user.subscription}
           </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+          >
+            <LogOut className="h-4 w-4 mr-1" />
+            Sign Out
+          </Button>
         </div>
       </nav>
     )
