@@ -2,15 +2,16 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Switch } from "@/components/ui/switch"
 import { toast } from "@/components/ui/use-toast"
-import { Link2, AlertCircle, CheckCircle } from "lucide-react"
+import { Link2, AlertCircle, CheckCircle, Film, Layers } from "lucide-react"
 import { supabase } from "@/lib/supabaseClient"
 import { useAuth } from "@/components/auth-provider"
 
@@ -27,19 +28,41 @@ type LinkResponse = {
   error?: string
 }
 
+type ParentOption = {
+  id: string
+  title: string
+  content_type?: string
+}
+
+type UploadMode = "title" | "episode"
+
 export default function UploadPage() {
+  const [uploadMode, setUploadMode] = useState<UploadMode>("title")
   const [streamVideoId, setStreamVideoId] = useState("")
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
-  const [contentType, setContentType] = useState("")
+  const [contentType, setContentType] = useState("movie")
   const [genre, setGenre] = useState("")
   const [dashboardSection, setDashboardSection] = useState("none")
+  const [isFree, setIsFree] = useState(false)
+  const [episodeNumber, setEpisodeNumber] = useState("1")
+  const [parentId, setParentId] = useState("")
+  const [parentOptions, setParentOptions] = useState<ParentOption[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [cloudflareConfigured, setCloudflareConfigured] = useState(true)
   const [preview, setPreview] = useState<LinkResponse | null>(null)
 
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { user } = useAuth()
+
+  useEffect(() => {
+    const parentFromUrl = searchParams.get("parent")
+    if (parentFromUrl) {
+      setUploadMode("episode")
+      setParentId(parentFromUrl)
+    }
+  }, [searchParams])
 
   const DASHBOARD_SECTIONS = [
     { value: "featured", label: "Featured Movies" },
@@ -67,6 +90,20 @@ export default function UploadPage() {
       router.push("/dashboard")
     }
   }, [user, router])
+
+  const loadParents = async () => {
+    const { data } = await supabase
+      .from("video_assets")
+      .select("id, title, content_type")
+      .in("content_type", ["movie", "series"])
+      .order("title", { ascending: true })
+
+    setParentOptions(data || [])
+  }
+
+  useEffect(() => {
+    loadParents()
+  }, [])
 
   const getAuthHeaders = async () => {
     const {
@@ -126,7 +163,7 @@ export default function UploadPage() {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
-    if (!cloudflareConfigured) {
+    if (!cloudflareConfigured && uploadMode === "episode") {
       toast({
         title: "Cloudflare Not Configured",
         description: "Add CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_STREAM_API_TOKEN to .env.local",
@@ -135,58 +172,125 @@ export default function UploadPage() {
       return
     }
 
-    if (!streamVideoId || !title || !description || !contentType || !genre) {
+    if (!title || !description || !genre) {
       toast({ title: "Missing Information", variant: "destructive" })
+      return
+    }
+
+    if (uploadMode === "episode") {
+      if (!streamVideoId || !parentId || !episodeNumber) {
+        toast({ title: "Episode requires parent, episode number, and video ID", variant: "destructive" })
+        return
+      }
+    } else if (contentType !== "series" && !streamVideoId) {
+      toast({ title: "Movies need a Cloudflare Video ID", variant: "destructive" })
       return
     }
 
     setSubmitting(true)
 
     try {
-      const headers = await getAuthHeaders()
-      const response = await fetch("/api/stream/link", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ streamVideoId }),
-      })
+      let manifestUrl: string | null = null
+      let cloudflareUid: string | null = null
+      let duration = 0
+      let resolution = "Unknown"
+      let thumbnail: string | null = null
+      let status = "ready"
 
-      const data = (await response.json()) as LinkResponse & { error?: string }
-      if (!response.ok) {
-        throw new Error(data.error || "Could not link Cloudflare Stream video")
+      if (streamVideoId) {
+        const headers = await getAuthHeaders()
+        const response = await fetch("/api/stream/link", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ streamVideoId }),
+        })
+
+        const data = (await response.json()) as LinkResponse & { error?: string }
+        if (!response.ok) {
+          throw new Error(data.error || "Could not link Cloudflare Stream video")
+        }
+
+        manifestUrl = data.manifestUrl
+        cloudflareUid = data.uid
+        duration = data.duration ? Math.round(data.duration) : 0
+        resolution = data.resolution || "Unknown"
+        thumbnail = data.thumbnail
+        status = data.ready ? "ready" : "processing"
       }
 
-      const { error: dbError } = await supabase.from("video_assets").insert({
+      const payload: Record<string, unknown> = {
         title,
         description,
-        manifest_url: data.manifestUrl,
-        cloudflare_stream_uid: data.uid,
+        manifest_url: manifestUrl,
+        cloudflare_stream_uid: cloudflareUid,
         file_size: null,
-        duration: data.duration ? Math.round(data.duration) : 0,
-        resolution: data.resolution || "Unknown",
+        duration,
+        resolution,
         user_id: user?.id,
-        status: data.ready ? "ready" : "processing",
+        status,
         dashboard_section: dashboardSection,
         genre,
-        content_type: contentType,
+        content_type: uploadMode === "episode" ? "episode" : contentType,
         is_public: true,
-        cover_image_path: data.thumbnail,
-      })
+        is_free: isFree,
+        cover_image_path: thumbnail,
+      }
+
+      if (uploadMode === "episode") {
+        payload.parent_id = parentId
+        payload.episode_number = parseInt(episodeNumber, 10)
+      }
+
+      const { data: inserted, error: dbError } = await supabase
+        .from("video_assets")
+        .insert(payload)
+        .select("id")
+        .single()
 
       if (dbError) {
         throw new Error(dbError.message)
       }
 
-      toast({ title: "Video added!", description: "Your Cloudflare Stream video is in the catalog." })
-      router.push("/dashboard")
+      toast({
+        title: uploadMode === "episode" ? "Episode added!" : "Title added!",
+        description:
+          uploadMode === "episode"
+            ? `Episode ${episodeNumber} is now part of the series.`
+            : contentType === "series"
+              ? "Series created. Add episodes next."
+              : "Your video is in the catalog.",
+      })
+
+      if (uploadMode === "episode") {
+        resetEpisodeForm()
+      } else if (contentType === "series" && inserted?.id) {
+        setUploadMode("episode")
+        setStreamVideoId("")
+        setTitle("")
+        setDescription("")
+        setPreview(null)
+        setParentId(inserted.id)
+        await loadParents()
+      } else {
+        router.push("/dashboard")
+      }
     } catch (error) {
       toast({
-        title: "Failed to add video",
+        title: "Failed to add content",
         description: error instanceof Error ? error.message : "Please try again",
         variant: "destructive",
       })
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const resetEpisodeForm = () => {
+    setStreamVideoId("")
+    setTitle("")
+    setDescription("")
+    setPreview(null)
+    setEpisodeNumber(String(parseInt(episodeNumber, 10) + 1))
   }
 
   if (!user || !["creator", "admin", "management"].includes(user.role)) {
@@ -208,15 +312,36 @@ export default function UploadPage() {
       <Card className="max-w-2xl mx-auto">
         <CardHeader>
           <CardTitle className="text-2xl font-bold text-center bg-gradient-to-r from-primary to-[#8e2de2] text-transparent bg-clip-text">
-            Add Cloudflare Stream Video
+            Upload Content
           </CardTitle>
           <CardDescription className="text-center">
-            Upload videos in the Cloudflare dashboard, then paste the Video ID here to add them to your platform
+            Add a movie/series title or upload individual episodes with free or paid access
           </CardDescription>
         </CardHeader>
 
         <CardContent>
-          {!cloudflareConfigured && (
+          <div className="grid grid-cols-2 gap-2 mb-6">
+            <Button
+              type="button"
+              variant={uploadMode === "title" ? "default" : "outline"}
+              onClick={() => setUploadMode("title")}
+              className="w-full"
+            >
+              <Film className="h-4 w-4 mr-2" />
+              Movie / Series
+            </Button>
+            <Button
+              type="button"
+              variant={uploadMode === "episode" ? "default" : "outline"}
+              onClick={() => setUploadMode("episode")}
+              className="w-full"
+            >
+              <Layers className="h-4 w-4 mr-2" />
+              Episode
+            </Button>
+          </div>
+
+          {!cloudflareConfigured && uploadMode === "episode" && (
             <div className="mb-6 rounded-lg border border-yellow-600/50 bg-yellow-500/10 p-4 text-sm text-yellow-200">
               Add <code>CLOUDFLARE_ACCOUNT_ID</code> and <code>CLOUDFLARE_STREAM_API_TOKEN</code> to{" "}
               <code>.env.local</code> and restart the dev server.
@@ -224,29 +349,79 @@ export default function UploadPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="streamVideoId">Cloudflare Video ID *</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="streamVideoId"
-                  value={streamVideoId}
-                  onChange={(e) => {
-                    setStreamVideoId(e.target.value)
-                    setPreview(null)
-                  }}
-                  placeholder="6238e1c7534547d1f1bf4c1636eba0be"
-                  disabled={submitting}
-                  required
-                />
-                <Button type="button" variant="outline" onClick={handleLookup} disabled={submitting}>
-                  Verify
-                </Button>
+            {uploadMode === "episode" && (
+              <>
+                <div className="space-y-2">
+                  <Label>Parent Movie / Series *</Label>
+                  <Select value={parentId} onValueChange={setParentId} disabled={submitting}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select parent title" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {parentOptions.map((parent) => (
+                        <SelectItem key={parent.id} value={parent.id}>
+                          {parent.title} ({parent.content_type})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="episodeNumber">Episode Number *</Label>
+                  <Input
+                    id="episodeNumber"
+                    type="number"
+                    min="1"
+                    value={episodeNumber}
+                    onChange={(e) => setEpisodeNumber(e.target.value)}
+                    disabled={submitting}
+                    required
+                  />
+                </div>
+              </>
+            )}
+
+            {uploadMode === "title" && (
+              <div className="space-y-2">
+                <Label>Content Type *</Label>
+                <Select value={contentType} onValueChange={setContentType} disabled={submitting}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select content type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="movie">Movie (single or episodic)</SelectItem>
+                    <SelectItem value="series">Series (episodes added separately)</SelectItem>
+                    <SelectItem value="documentary">Documentary</SelectItem>
+                    <SelectItem value="short">Short Film</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Find this in Cloudflare → Stream → your video → right sidebar under <strong>Video ID</strong>.
-                You can also paste the HLS Manifest URL or embed link.
-              </p>
-            </div>
+            )}
+
+            {(uploadMode === "episode" || contentType !== "series") && (
+              <div className="space-y-2">
+                <Label htmlFor="streamVideoId">
+                  Cloudflare Video ID {uploadMode === "episode" ? "*" : "*"}
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="streamVideoId"
+                    value={streamVideoId}
+                    onChange={(e) => {
+                      setStreamVideoId(e.target.value)
+                      setPreview(null)
+                    }}
+                    placeholder="6238e1c7534547d1f1bf4c1636eba0be"
+                    disabled={submitting}
+                    required={uploadMode === "episode" || contentType !== "series"}
+                  />
+                  <Button type="button" variant="outline" onClick={handleLookup} disabled={submitting}>
+                    Verify
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {preview && (
               <div className="rounded-lg border border-green-600/40 bg-green-500/10 p-4 space-y-2 text-sm">
@@ -255,16 +430,19 @@ export default function UploadPage() {
                   {preview.ready ? "Video is ready" : `Processing (${preview.status})`}
                 </div>
                 <p className="text-muted-foreground">ID: {preview.uid}</p>
-                {preview.resolution && <p className="text-muted-foreground">Resolution: {preview.resolution}</p>}
-                {preview.duration != null && (
-                  <p className="text-muted-foreground">Duration: {Math.round(preview.duration)}s</p>
-                )}
               </div>
             )}
 
             <div className="space-y-2">
               <Label htmlFor="title">Title *</Label>
-              <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} disabled={submitting} required />
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                disabled={submitting}
+                required
+                placeholder={uploadMode === "episode" ? "Episode 1" : "Movie or series title"}
+              />
             </div>
 
             <div className="space-y-2">
@@ -277,22 +455,6 @@ export default function UploadPage() {
                 disabled={submitting}
                 required
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Content Type *</Label>
-              <Select value={contentType} onValueChange={setContentType} disabled={submitting}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select content type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="movie">Movie</SelectItem>
-                  <SelectItem value="series">Series</SelectItem>
-                  <SelectItem value="documentary">Documentary</SelectItem>
-                  <SelectItem value="short">Short Film</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="space-y-2">
@@ -315,7 +477,19 @@ export default function UploadPage() {
               </Select>
             </div>
 
-            {(user?.role === "admin" || user?.role === "management") && (
+            <div className="flex items-center justify-between rounded-lg border border-gray-700 p-4">
+              <div>
+                <Label htmlFor="isFree" className="text-base">Free to watch</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {uploadMode === "episode"
+                    ? "Free episodes play without purchase. Paid episodes show a lock."
+                    : "Mark the entire title free for all viewers."}
+                </p>
+              </div>
+              <Switch id="isFree" checked={isFree} onCheckedChange={setIsFree} disabled={submitting} />
+            </div>
+
+            {(user?.role === "admin" || user?.role === "management") && uploadMode === "title" && (
               <div className="space-y-2">
                 <Label>Dashboard Section</Label>
                 <Select value={dashboardSection} onValueChange={setDashboardSection} disabled={submitting}>
@@ -336,10 +510,16 @@ export default function UploadPage() {
             <Button
               type="submit"
               className="w-full bg-gradient-to-r from-primary to-[#8e2de2] text-white"
-              disabled={submitting || !cloudflareConfigured || !streamVideoId || !title || !description || !contentType || !genre}
+              disabled={submitting || !title || !description || !genre}
             >
               <Link2 className="h-4 w-4 mr-2" />
-              {submitting ? "Adding..." : "Add to Platform"}
+              {submitting
+                ? "Adding..."
+                : uploadMode === "episode"
+                  ? "Add Episode"
+                  : contentType === "series"
+                    ? "Create Series"
+                    : "Add to Platform"}
             </Button>
           </form>
         </CardContent>

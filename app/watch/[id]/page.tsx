@@ -16,6 +16,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Play, Pause, Volume2, VolumeX } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { useAuth } from '@/components/auth-provider'
+import { WatchPaywall } from '@/components/watch-paywall'
+import { WatchContentPanel } from '@/components/watch-content-panel'
+import { toast } from '@/components/ui/use-toast'
+import type { AccessResult } from '@/lib/content-access'
+import type { PurchaseType } from '@/lib/content-pricing'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -27,14 +33,82 @@ export default function WatchPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
   const router = useRouter()
+  const { user } = useAuth()
   
   const [videoData, setVideoData] = useState<any>(null)
+  const [accessInfo, setAccessInfo] = useState<AccessResult | null>(null)
+  const [isPurchasing, setIsPurchasing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [seriesId, setSeriesId] = useState<string | null>(null)
+
+  const hasAccess = accessInfo?.hasAccess ?? false
+
+  const fetchAccess = async (videoId: string) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    const response = await fetch(`/api/watch/access?videoId=${videoId}`, {
+      headers: session?.access_token
+        ? { Authorization: `Bearer ${session.access_token}` }
+        : {},
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to check access')
+    }
+
+    return response.json()
+  }
+
+  const handlePurchase = async (purchaseType: PurchaseType) => {
+    const { data: { session } } = await supabase.auth.getSession()
+
+    if (!session) {
+      router.push('/login')
+      return
+    }
+
+    setIsPurchasing(true)
+
+    try {
+      const response = await fetch('/api/watch/purchase', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          videoId: params.id,
+          purchaseType,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Purchase failed')
+      }
+
+      const access = await fetchAccess(params.id as string)
+      setAccessInfo(access)
+
+      toast({
+        title: 'Purchase successful',
+        description: 'You can now watch this title.',
+      })
+    } catch (err: any) {
+      toast({
+        title: 'Purchase failed',
+        description: err.message || 'Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsPurchasing(false)
+    }
+  }
 
   useEffect(() => {
     const loadVideo = async () => {
@@ -63,8 +137,51 @@ export default function WatchPage() {
           throw new Error('Video is not ready for playback')
         }
 
+        setVideoData(data)
+
+        let resolvedSeriesId: string | null = null
+        if (data.parent_id) {
+          resolvedSeriesId = data.parent_id
+        } else if (data.content_type === 'series') {
+          resolvedSeriesId = data.id
+        } else {
+          const { count } = await supabase
+            .from('video_assets')
+            .select('id', { count: 'exact', head: true })
+            .eq('parent_id', data.id)
+
+          if (count && count > 0) {
+            resolvedSeriesId = data.id
+          }
+        }
+
+        setSeriesId(resolvedSeriesId)
+
+        if (data.content_type === 'series' && !data.cloudflare_stream_uid && !data.manifest_url) {
+          const { data: firstEpisode } = await supabase
+            .from('video_assets')
+            .select('id')
+            .eq('parent_id', data.id)
+            .order('episode_number', { ascending: true })
+            .limit(1)
+            .maybeSingle()
+
+          if (firstEpisode?.id) {
+            router.replace(`/watch/${firstEpisode.id}`)
+            return
+          }
+        }
+
+        const access = await fetchAccess(params.id as string)
+        setAccessInfo(access)
+
+        if (!access.hasAccess) {
+          setLoading(false)
+          return
+        }
+
         let manifestUrl = data.manifest_url
-        if (!manifestUrl) {
+        if (!manifestUrl && !data.cloudflare_stream_uid) {
           throw new Error('No manifest URL found')
         }
 
@@ -262,7 +379,7 @@ export default function WatchPage() {
         hlsRef.current = null
       }
     }
-  }, [params.id])
+  }, [params.id, user?.id, user?.subscription, hasAccess])
 
   // Video event handlers
   useEffect(() => {
@@ -365,7 +482,20 @@ export default function WatchPage() {
           </CardHeader>
           <CardContent>
             <div className="relative bg-black rounded-lg overflow-hidden">
-              {videoData?.cloudflare_stream_uid ? (
+              {!hasAccess && accessInfo ? (
+                <WatchPaywall
+                  title={videoData?.title || 'Video'}
+                  isEpisode={accessInfo.isEpisode}
+                  parentTitle={accessInfo.parentTitle}
+                  moviePrice={accessInfo.pricing.movie}
+                  episodePrice={accessInfo.pricing.episode}
+                  subscriptionTier={accessInfo.subscriptionTier}
+                  isLoggedIn={Boolean(user)}
+                  isPurchasing={isPurchasing}
+                  onPurchaseMovie={() => handlePurchase('movie')}
+                  onPurchaseEpisode={() => handlePurchase('episode')}
+                />
+              ) : videoData?.cloudflare_stream_uid ? (
                 <div className="aspect-video w-full">
                   <iframe
                     src={videoData.cloudflare_iframe_url || getCloudflareStreamIframeUrl(videoData.cloudflare_stream_uid)}
@@ -581,6 +711,18 @@ export default function WatchPage() {
               </div>
             </CardContent>
           </Card>
+        )}
+        {videoData && accessInfo && (
+          <WatchContentPanel
+            videoId={params.id as string}
+            seriesId={seriesId}
+            videoTitle={videoData.title}
+            videoDescription={videoData.description}
+            accessInfo={accessInfo}
+            isLoggedIn={Boolean(user)}
+            isPurchasing={isPurchasing}
+            onPurchase={handlePurchase}
+          />
         )}
       </div>
     </div>

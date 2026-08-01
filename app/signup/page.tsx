@@ -214,9 +214,8 @@ export default function SignUpPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="free">Free - 720p, 1 device, with ads</SelectItem>
-                  <SelectItem value="standard">Standard - 1080p, 2 devices, no ads ($5/month)</SelectItem>
-                  <SelectItem value="premium">Premium - 4K, 4 devices, no ads ($10/month)</SelectItem>
-                  <SelectItem value="family">Family - 4K, 5 devices, no ads ($15/month)</SelectItem>
+                  <SelectItem value="standard">Standard - 1080p, 2 devices ($7.50/mo or $81/yr)</SelectItem>
+                  <SelectItem value="family">Family - 4K, 5 devices ($12/mo or $129.60/yr)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

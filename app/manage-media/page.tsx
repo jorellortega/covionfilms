@@ -8,18 +8,23 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/components/ui/use-toast"
-import { Pencil, Trash2, Eye, Play, Download, ExternalLink, Loader2, Film, Settings, ImageIcon, X, Star } from "lucide-react"
+import { Pencil, Trash2, Eye, Play, Download, ExternalLink, Loader2, Film, Settings, ImageIcon, X, Star, Lock, Unlock, Layers, Plus } from "lucide-react"
 import Image from "next/image"
 import { useAuth } from "@/components/auth-provider"
 import { supabase } from "@/lib/supabaseClient"
 import { Badge } from "@/components/ui/badge"
+import { Switch } from "@/components/ui/switch"
 import Link from "next/link"
+import { EPISODE_PURCHASE_PRICE, MOVIE_PURCHASE_PRICE, formatUsd } from "@/lib/content-pricing"
 
 interface Video {
   id: string
   title: string
   description: string
   content_type?: string
+  parent_id?: string
+  episode_number?: number
+  is_free?: boolean
   genre?: string
   duration?: number
   duration_seconds?: number
@@ -58,12 +63,18 @@ export default function ManageMediaPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterType, setFilterType] = useState<string | undefined>()
   const [filterStatus, setFilterStatus] = useState<string | undefined>()
+  const [filterPricing, setFilterPricing] = useState<string | undefined>()
+  const [viewMode, setViewMode] = useState<'all' | 'titles'>('titles')
+  const [managingSeriesId, setManagingSeriesId] = useState<string | null>(null)
   const [editingVideo, setEditingVideo] = useState<Video | null>(null)
   const [editForm, setEditForm] = useState({
     title: '',
     description: '',
     genre: '',
     content_type: '',
+    parent_id: '',
+    episode_number: '',
+    is_free: false,
     dashboard_section: 'none',
     is_public: true,
     manifest_url: '',
@@ -148,21 +159,98 @@ export default function ManageMediaPage() {
     }
   }
 
+  const parentTitles = videos.reduce<Record<string, string>>((acc, video) => {
+    acc[video.id] = video.title
+    return acc
+  }, {})
+
+  const episodeCountByParent = videos.reduce<Record<string, number>>((acc, video) => {
+    if (video.parent_id) {
+      acc[video.parent_id] = (acc[video.parent_id] || 0) + 1
+    }
+    return acc
+  }, {})
+
+  const parentOptions = videos.filter(
+    (video) =>
+      video.source === 'video_assets' &&
+      (video.content_type === 'movie' || video.content_type === 'series')
+  )
+
+  const seriesEpisodes = managingSeriesId
+    ? videos
+        .filter((video) => video.parent_id === managingSeriesId)
+        .sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0))
+    : []
+
   const filteredVideos = videos.filter((video) => {
     const matchesSearch = video.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          video.description.toLowerCase().includes(searchTerm.toLowerCase())
     const matchesType = !filterType || video.content_type === filterType
     const matchesStatus = !filterStatus || video.status === filterStatus
-    
-    return matchesSearch && matchesType && matchesStatus
+    const matchesPricing =
+      !filterPricing ||
+      (filterPricing === 'free' && video.is_free) ||
+      (filterPricing === 'paid' && !video.is_free)
+    const matchesView =
+      viewMode === 'all' ||
+      video.content_type !== 'episode'
+
+    return matchesSearch && matchesType && matchesStatus && matchesPricing && matchesView
   })
+
+  const handleToggleFree = async (video: Video) => {
+    if (video.source !== 'video_assets') {
+      toast({
+        title: "Not supported",
+        description: "Pricing controls only apply to video_assets entries.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const nextValue = !video.is_free
+      const { error } = await supabase
+        .from('video_assets')
+        .update({ is_free: nextValue })
+        .eq('id', video.id)
+
+      if (error) throw error
+
+      setVideos(videos.map((v) => (v.id === video.id ? { ...v, is_free: nextValue } : v)))
+
+      toast({
+        title: nextValue ? "Marked as free" : "Marked as paid",
+        description: `"${video.title}" is now ${nextValue ? 'free' : 'paid'} to watch.`,
+      })
+    } catch (error: unknown) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update pricing",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const getPricingLabel = (video: Video) => {
+    if (video.is_free) return 'Free'
+    if (video.content_type === 'episode') return formatUsd(EPISODE_PURCHASE_PRICE)
+    return formatUsd(MOVIE_PURCHASE_PRICE)
+  }
+
+  const getContentTypeLabel = (video: Video) => {
+    if (video.content_type === 'episode' && video.episode_number) {
+      return `Ep ${video.episode_number}`
+    }
+    return video.content_type || 'unknown'
+  }
 
   const handleDelete = async (video: Video) => {
     if (confirm("Are you sure you want to delete this video? This action cannot be undone.")) {
       try {
         const table = video.source || 'videos'
         
-        // Delete from appropriate table
         const { error } = await supabase
           .from(table)
           .delete()
@@ -170,7 +258,6 @@ export default function ManageMediaPage() {
 
         if (error) throw error
 
-        // Remove from local state
         setVideos(videos.filter((v) => v.id !== video.id))
         
         toast({
@@ -195,6 +282,9 @@ export default function ManageMediaPage() {
       description: video.description || '',
       genre: video.genre || '',
       content_type: video.content_type || '',
+      parent_id: video.parent_id || '',
+      episode_number: video.episode_number ? String(video.episode_number) : '',
+      is_free: Boolean((video as any).is_free),
       dashboard_section: video.dashboard_section || 'none',
       is_public: video.is_public !== false,
       manifest_url: video.manifest_url || video.file_path || '',
@@ -307,6 +397,14 @@ export default function ManageMediaPage() {
       // Only add content_type if it exists in the table
       if (editForm.content_type) {
         updates.content_type = editForm.content_type
+      }
+
+      if (table === 'video_assets') {
+        updates.parent_id = editForm.parent_id || null
+        updates.episode_number = editForm.episode_number
+          ? parseInt(editForm.episode_number, 10)
+          : null
+        updates.is_free = editForm.is_free
       }
 
       // Update cover_image_path if new cover was uploaded
@@ -590,17 +688,23 @@ export default function ManageMediaPage() {
       </h1>
 
       <Card className="mb-6 border-primary/30 bg-primary/5">
-        <CardContent className="pt-6 space-y-3 text-sm">
-          <p className="font-medium text-primary">Main top player (hero video)</p>
-          <p className="text-muted-foreground">
-            Click the <strong>star button</strong> on a video, or set <strong>Show on Dashboard</strong> to <strong>New Releases</strong>.
-            Video must be <strong>Public</strong> and <strong>Ready</strong>.
-          </p>
-          <ul className="grid sm:grid-cols-2 gap-2 text-muted-foreground">
-            <li><strong>★ New Releases</strong> → main top player</li>
-            <li><strong>Top Movies</strong> → top 10 section</li>
-            <li><strong>Hidden</strong> → not on dashboard</li>
-          </ul>
+        <CardContent className="pt-6 space-y-4 text-sm">
+          <div>
+            <p className="font-medium text-primary">Main top player (hero video)</p>
+            <p className="text-muted-foreground">
+              Click the <strong>star button</strong> on a video, or set <strong>Show on Dashboard</strong> to <strong>New Releases</strong>.
+              Video must be <strong>Public</strong> and <strong>Ready</strong>.
+            </p>
+          </div>
+          <div className="border-t border-primary/20 pt-4">
+            <p className="font-medium text-primary">Episodes & pricing</p>
+            <ul className="mt-2 space-y-1 text-muted-foreground">
+              <li><strong>Series / Movie</strong> — parent title; add episodes from <Link href="/upload" className="text-primary hover:underline">Upload</Link></li>
+              <li><strong>Episode</strong> — link to a parent, set episode number, free or paid ({formatUsd(EPISODE_PURCHASE_PRICE)}/ep)</li>
+              <li><strong>Standalone movie</strong> — paid by default at {formatUsd(MOVIE_PURCHASE_PRICE)} unless marked free</li>
+              <li><strong>Standard / Family</strong> subscribers watch everything for free</li>
+            </ul>
+          </div>
         </CardContent>
       </Card>
       
@@ -610,7 +714,7 @@ export default function ManageMediaPage() {
           <CardDescription>View and manage all your uploaded content</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          <div className="flex flex-col lg:flex-row gap-4 mb-6">
             <Input
               placeholder="Search videos..."
               value={searchTerm}
@@ -624,9 +728,20 @@ export default function ManageMediaPage() {
               <SelectContent>
                 <SelectItem value={undefined}>All Types</SelectItem>
                 <SelectItem value="movie">Movie</SelectItem>
-                <SelectItem value="shortFilm">Short Film</SelectItem>
-                <SelectItem value="reel">Reel</SelectItem>
-                <SelectItem value="clip">Clip</SelectItem>
+                <SelectItem value="series">Series</SelectItem>
+                <SelectItem value="episode">Episode</SelectItem>
+                <SelectItem value="documentary">Documentary</SelectItem>
+                <SelectItem value="short">Short Film</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterPricing} onValueChange={setFilterPricing}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filter by pricing" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={undefined}>All Pricing</SelectItem>
+                <SelectItem value="free">Free</SelectItem>
+                <SelectItem value="paid">Paid</SelectItem>
               </SelectContent>
             </Select>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
@@ -639,6 +754,15 @@ export default function ManageMediaPage() {
                 <SelectItem value="processing">Processing</SelectItem>
                 <SelectItem value="uploading">Uploading</SelectItem>
                 <SelectItem value="error">Error</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={viewMode} onValueChange={(v) => setViewMode(v as 'all' | 'titles')}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="View" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="titles">Titles only</SelectItem>
+                <SelectItem value="all">Titles + episodes</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -668,14 +792,12 @@ export default function ManageMediaPage() {
                   <TableHead>Cover</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead>Type</TableHead>
+                  <TableHead>Parent / Episodes</TableHead>
+                  <TableHead>Pricing</TableHead>
                   <TableHead>Genre</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Quality</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Visibility</TableHead>
-                  <TableHead>Show on Dashboard</TableHead>
-                  <TableHead>Views</TableHead>
-                  <TableHead>Upload Date</TableHead>
+                  <TableHead>Dashboard</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -721,14 +843,61 @@ export default function ManageMediaPage() {
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="capitalize">
-                        {video.content_type}
+                        {getContentTypeLabel(video)}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {video.parent_id ? (
+                        <span className="text-sm text-muted-foreground">
+                          {parentTitles[video.parent_id] || video.parent_id.slice(0, 8) + '…'}
+                        </span>
+                      ) : (video.content_type === 'series' || video.content_type === 'movie') ? (
+                        <div className="space-y-1">
+                          <span className="text-sm">{episodeCountByParent[video.id] || 0} episodes</span>
+                          {video.source === 'video_assets' && (
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="h-auto p-0 text-primary"
+                              onClick={() => setManagingSeriesId(
+                                managingSeriesId === video.id ? null : video.id
+                              )}
+                            >
+                              <Layers className="h-3 w-3 mr-1 inline" />
+                              Manage
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {video.source === 'video_assets' ? (
+                        <div className="space-y-2">
+                          <Badge
+                            variant={video.is_free ? 'default' : 'secondary'}
+                            className={video.is_free ? 'bg-green-600' : ''}
+                          >
+                            {getPricingLabel(video)}
+                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={Boolean(video.is_free)}
+                              onCheckedChange={() => handleToggleFree(video)}
+                            />
+                            <span className="text-xs text-muted-foreground">
+                              {video.is_free ? 'Free' : 'Paid'}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <Badge variant="outline">Legacy</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{video.genre}</Badge>
                     </TableCell>
-                    <TableCell>{formatDuration(getVideoDuration(video))}</TableCell>
-                    <TableCell>{getQualityBadge(video.quality)}</TableCell>
                     <TableCell>{getStatusBadge(video.status)}</TableCell>
                     <TableCell>
                       <Select 
@@ -768,23 +937,15 @@ export default function ManageMediaPage() {
                       </Select>
                     </TableCell>
                     <TableCell>
-                      <div className="text-center">
-                        <div className="font-medium">{video.view_count}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {video.rating_count > 0 && `★ ${video.rating_average.toFixed(1)}`}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        {new Date(video.created_at).toLocaleDateString()}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatFileSize(video.file_size)}
-                      </div>
-                    </TableCell>
-                    <TableCell>
                       <div className="flex flex-col gap-2">
+                        {(video.content_type === 'series' || video.content_type === 'movie') && video.source === 'video_assets' && (
+                          <Link href={`/upload?parent=${video.id}`}>
+                            <Button variant="outline" size="sm" className="w-full">
+                              <Plus className="h-4 w-4 mr-1" />
+                              Add Ep
+                            </Button>
+                          </Link>
+                        )}
                         <Button
                           variant={video.dashboard_section === 'new_releases' ? 'default' : 'outline'}
                           size="sm"
@@ -844,6 +1005,62 @@ export default function ManageMediaPage() {
                 ))}
               </TableBody>
             </Table>
+          )}
+
+          {managingSeriesId && (
+            <Card className="mt-6 border-primary/30">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg">
+                      Episodes — {parentTitles[managingSeriesId]}
+                    </CardTitle>
+                    <CardDescription>
+                      Manage episode order, pricing, and free/paid status
+                    </CardDescription>
+                  </div>
+                  <div className="flex gap-2">
+                    <Link href={`/upload?parent=${managingSeriesId}`}>
+                      <Button size="sm">
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add Episode
+                      </Button>
+                    </Link>
+                    <Button variant="outline" size="sm" onClick={() => setManagingSeriesId(null)}>
+                      Close
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {seriesEpisodes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    No episodes yet. Use Upload or Add Episode to create them.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">
+                    {seriesEpisodes.map((episode) => (
+                      <button
+                        key={episode.id}
+                        type="button"
+                        onClick={() => handleEdit(episode)}
+                        className={`relative aspect-square rounded-md text-sm font-medium transition-colors ${
+                          episode.is_free
+                            ? 'bg-zinc-800 hover:bg-zinc-700 text-white'
+                            : 'bg-zinc-800 hover:bg-zinc-700 text-white'
+                        }`}
+                        title={`${episode.title} — ${episode.is_free ? 'Free' : 'Paid'}`}
+                      >
+                        {episode.episode_number || '?'}
+                        {!episode.is_free && (
+                          <Lock className="absolute top-1 right-1 h-3 w-3 text-zinc-400" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
         </CardContent>
         <CardFooter>
@@ -948,6 +1165,7 @@ export default function ManageMediaPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="movie">Movie</SelectItem>
+                      <SelectItem value="episode">Episode</SelectItem>
                       <SelectItem value="series">Series</SelectItem>
                       <SelectItem value="documentary">Documentary</SelectItem>
                       <SelectItem value="short">Short Film</SelectItem>
@@ -977,6 +1195,63 @@ export default function ManageMediaPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              {editForm.content_type === 'episode' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Parent Movie / Series</Label>
+                    <Select
+                      value={editForm.parent_id}
+                      onValueChange={(value) => setEditForm({ ...editForm, parent_id: value })}
+                      disabled={uploadingCover}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select parent" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {parentOptions.map((parent) => (
+                          <SelectItem key={parent.id} value={parent.id}>
+                            {parent.title} ({parent.content_type})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Episode Number</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={editForm.episode_number}
+                      onChange={(e) => setEditForm({ ...editForm, episode_number: e.target.value })}
+                      disabled={uploadingCover}
+                    />
+                  </div>
+                </div>
+              )}
+              {(editForm.content_type === 'movie' || editForm.content_type === 'series') && (
+                <div className="rounded-lg border border-dashed border-gray-700 p-4 text-sm text-muted-foreground">
+                  Add episodes from{' '}
+                  <Link href={`/upload?parent=${editingVideo.id}`} className="text-primary hover:underline">
+                    Upload → Episode
+                  </Link>
+                  . Whole title: {formatUsd(MOVIE_PURCHASE_PRICE)} unless marked free below.
+                </div>
+              )}
+              <div className="flex items-center justify-between rounded-lg border p-4">
+                <div>
+                  <Label>Free to watch</Label>
+                  <p className="text-xs text-muted-foreground">
+                    {editForm.content_type === 'episode'
+                      ? `Paid episodes cost ${formatUsd(EPISODE_PURCHASE_PRICE)} each on the watch page`
+                      : `Paid titles cost ${formatUsd(MOVIE_PURCHASE_PRICE)} on the watch page`}
+                  </p>
+                </div>
+                <Switch
+                  checked={editForm.is_free}
+                  onCheckedChange={(checked) => setEditForm({ ...editForm, is_free: checked })}
+                  disabled={uploadingCover}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
