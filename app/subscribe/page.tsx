@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "@/components/ui/use-toast"
+import { EPISODE_PURCHASE_PRICE, MOVIE_PURCHASE_PRICE, formatUsd } from "@/lib/content-pricing"
 
 const ANNUAL_DISCOUNT = 0.1
 
@@ -134,6 +135,45 @@ export default function SubscribePage() {
           )
         })}
       </RadioGroup>
+
+      <Card className="mt-10 max-w-3xl mx-auto border-gray-800">
+        <CardHeader>
+          <CardTitle className="text-xl">Pay Per Title (No Subscription)</CardTitle>
+          <CardDescription>
+            Prefer to pay only for what you watch? Buy individual movies and episodes without a monthly plan.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="rounded-lg border border-gray-800 bg-card/50 p-4">
+              <p className="font-semibold text-primary">Full Movie / Series</p>
+              <p className="text-2xl font-bold mt-1">{formatUsd(MOVIE_PURCHASE_PRICE)}</p>
+              <p className="text-muted-foreground mt-2">
+                Unlock an entire movie or all episodes in a series with one purchase.
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-800 bg-card/50 p-4">
+              <p className="font-semibold text-primary">Single Episode</p>
+              <p className="text-2xl font-bold mt-1">{formatUsd(EPISODE_PURCHASE_PRICE)}</p>
+              <p className="text-muted-foreground mt-2">
+                Pay per episode for series content. Free episodes are marked on the watch page.
+              </p>
+            </div>
+          </div>
+          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+            <p className="font-medium">Included with Standard & Family plans</p>
+            <p className="text-muted-foreground mt-1">
+              <strong>Standard</strong> ({formatPrice(7.5)}/mo or {formatPrice(getAnnualPrice(7.5))}/yr) and{" "}
+              <strong>Family</strong> ({formatPrice(12)}/mo or {formatPrice(getAnnualPrice(12))}/yr) subscribers
+              watch all paid movies and episodes at no extra cost — no per-title charges.
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground text-center">
+            Free-tier members and guests can browse free content or purchase titles individually on any watch page.
+          </p>
+        </CardContent>
+      </Card>
+
       <div className="mt-8 text-center">
         <Button onClick={handleSubscribe} size="lg" className="w-full md:w-auto">
           Subscribe Now
