@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { Suspense, useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,6 +37,24 @@ type ParentOption = {
 type UploadMode = "title" | "episode"
 
 export default function UploadPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto px-4 py-8">
+          <Card className="max-w-2xl mx-auto">
+            <CardContent className="text-center py-8 text-muted-foreground">
+              Loading upload...
+            </CardContent>
+          </Card>
+        </div>
+      }
+    >
+      <UploadPageContent />
+    </Suspense>
+  )
+}
+
+function UploadPageContent() {
   const [uploadMode, setUploadMode] = useState<UploadMode>("title")
   const [streamVideoId, setStreamVideoId] = useState("")
   const [title, setTitle] = useState("")
