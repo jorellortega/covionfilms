@@ -22,6 +22,7 @@ import { WatchContentPanel } from '@/components/watch-content-panel'
 import { toast } from '@/components/ui/use-toast'
 import type { AccessResult } from '@/lib/content-access'
 import type { PurchaseType } from '@/lib/content-pricing'
+import { useRecordPlay } from '@/hooks/use-record-play'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,6 +48,8 @@ export default function WatchPage() {
   const [seriesId, setSeriesId] = useState<string | null>(null)
 
   const hasAccess = accessInfo?.hasAccess ?? false
+  const { recordPlay } = useRecordPlay(params.id as string)
+  const lastProgressRef = useRef(0)
 
   const fetchAccess = async (videoId: string) => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -381,21 +384,42 @@ export default function WatchPage() {
     }
   }, [params.id, user?.id, user?.subscription, hasAccess])
 
+  useEffect(() => {
+    if (hasAccess && videoData && !loading) {
+      recordPlay('start')
+    }
+  }, [hasAccess, videoData, loading, recordPlay])
+
   // Video event handlers
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
 
-    const handleTimeUpdate = () => setCurrentTime(video.currentTime)
+    const handleTimeUpdate = () => {
+      setCurrentTime(video.currentTime)
+      const seconds = Math.floor(video.currentTime)
+      if (seconds - lastProgressRef.current >= 30) {
+        lastProgressRef.current = seconds
+        recordPlay('progress', seconds)
+      }
+    }
     const handleDurationChange = () => setDuration(video.duration)
-    const handlePlay = () => setIsPlaying(true)
+    const handlePlay = () => {
+      setIsPlaying(true)
+      recordPlay('start')
+    }
     const handlePause = () => setIsPlaying(false)
+    const handleEnded = () => {
+      setIsPlaying(false)
+      recordPlay('complete', Math.floor(video.duration || 0))
+    }
     const handleLoadedMetadata = () => setLoading(false)
 
     video.addEventListener('timeupdate', handleTimeUpdate)
     video.addEventListener('durationchange', handleDurationChange)
     video.addEventListener('play', handlePlay)
     video.addEventListener('pause', handlePause)
+    video.addEventListener('ended', handleEnded)
     video.addEventListener('loadedmetadata', handleLoadedMetadata)
 
     return () => {
@@ -403,9 +427,10 @@ export default function WatchPage() {
       video.removeEventListener('durationchange', handleDurationChange)
       video.removeEventListener('play', handlePlay)
       video.removeEventListener('pause', handlePause)
+      video.removeEventListener('ended', handleEnded)
       video.removeEventListener('loadedmetadata', handleLoadedMetadata)
     }
-  }, [])
+  }, [recordPlay])
 
   const togglePlay = () => {
     if (videoRef.current) {
@@ -503,7 +528,10 @@ export default function WatchPage() {
                     allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
                     allowFullScreen
                     title={videoData.title}
-                    onLoad={() => setLoading(false)}
+                    onLoad={() => {
+                      setLoading(false)
+                      recordPlay('start')
+                    }}
                   />
                 </div>
               ) : videoData?.manifest_url && 
@@ -677,6 +705,12 @@ export default function WatchPage() {
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
+                  <span className="font-medium">Views:</span>
+                  <p className="text-muted-foreground">
+                    {(videoData.view_count ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <div>
                   <span className="font-medium">Duration:</span>
                   <p className="text-muted-foreground">
                     {videoData.duration ? `${Math.floor(videoData.duration / 60)}:${(videoData.duration % 60).toString().padStart(2, '0')}` : 'Unknown'}
@@ -692,22 +726,6 @@ export default function WatchPage() {
                     {videoData.file_size ? `${(videoData.file_size / (1024 * 1024)).toFixed(2)} MB` : 'Unknown'}
                   </p>
                 </div>
-                <div>
-                  <span className="font-medium">Format:</span>
-                  <p className="text-muted-foreground">
-                    {videoData.cloudflare_stream_uid || isCloudflareStreamUrl(videoData.manifest_url || '')
-                      ? 'Cloudflare Stream'
-                      : 'HLS'}
-                  </p>
-                </div>
-              </div>
-              
-              <div className="pt-4 border-t">
-                <p className="text-xs text-muted-foreground">
-                  {videoData.cloudflare_stream_uid || isCloudflareStreamUrl(videoData.manifest_url || '')
-                    ? 'This video is delivered through Cloudflare Stream for adaptive playback across all devices.'
-                    : 'This video is streamed using HLS (HTTP Live Streaming) technology for optimal playback across all devices.'}
-                </p>
               </div>
             </CardContent>
           </Card>

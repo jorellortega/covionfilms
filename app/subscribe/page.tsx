@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { toast } from "@/components/ui/use-toast"
 import { EPISODE_PURCHASE_PRICE, MOVIE_PURCHASE_PRICE, formatUsd } from "@/lib/content-pricing"
+import { cn } from "@/lib/utils"
 
 const ANNUAL_DISCOUNT = 0.1
 
@@ -49,9 +50,11 @@ export default function SubscribePage() {
   const [selectedPlan, setSelectedPlan] = useState("")
   const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("monthly")
 
-  const handleSubscribe = () => {
-    if (selectedPlan) {
-      const label = getDisplayLabel(selectedPlan)
+  const handleSubscribe = (planName?: string) => {
+    const plan = planName || selectedPlan
+    if (plan) {
+      if (planName) setSelectedPlan(planName)
+      const label = getDisplayLabel(plan)
       const period = billingPeriod === "annual" ? "annual" : "monthly"
       toast({
         title: "Subscription Successful",
@@ -97,7 +100,11 @@ export default function SubscribePage() {
         </div>
       </div>
 
-      <RadioGroup onValueChange={setSelectedPlan} className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+      <RadioGroup
+        value={selectedPlan}
+        onValueChange={setSelectedPlan}
+        className="grid gap-8 md:grid-cols-2 lg:grid-cols-3"
+      >
         {subscriptionPlans.map((plan) => {
           const isFree = plan.monthlyPrice === 0
           const annualPrice = getAnnualPrice(plan.monthlyPrice)
@@ -106,9 +113,25 @@ export default function SubscribePage() {
             : billingPeriod === "monthly"
               ? `${formatPrice(plan.monthlyPrice)}/month`
               : `${formatPrice(annualPrice)}/year`
+          const isSelected = selectedPlan === plan.name
 
           return (
-            <Card key={plan.name} className={`relative ${selectedPlan === plan.name ? "border-primary" : ""}`}>
+            <Card
+              key={plan.name}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedPlan(plan.name)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault()
+                  setSelectedPlan(plan.name)
+                }
+              }}
+              className={cn(
+                "relative cursor-pointer transition-all hover:border-primary/60 hover:shadow-lg",
+                isSelected && "border-primary ring-2 ring-primary/30"
+              )}
+            >
               <CardHeader>
                 <CardTitle className="text-lg font-bold bg-gradient-to-r from-red-600 to-white text-transparent bg-clip-text p-2">
                   {getDisplayLabel(plan.name)}
@@ -128,8 +151,22 @@ export default function SubscribePage() {
                   ))}
                 </ul>
               </CardContent>
-              <CardFooter>
-                <RadioGroupItem value={plan.name} id={plan.name} className="absolute top-4 right-4" />
+              <CardFooter className="flex flex-col gap-3">
+                <Button
+                  className="w-full"
+                  variant={isSelected ? "default" : "outline"}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleSubscribe(plan.name)
+                  }}
+                >
+                  {isFree ? "Get Started" : "Subscribe"}
+                </Button>
+                <RadioGroupItem
+                  value={plan.name}
+                  id={plan.name}
+                  className="absolute top-4 right-4 pointer-events-none"
+                />
               </CardFooter>
             </Card>
           )
@@ -173,12 +210,6 @@ export default function SubscribePage() {
           </p>
         </CardContent>
       </Card>
-
-      <div className="mt-8 text-center">
-        <Button onClick={handleSubscribe} size="lg" className="w-full md:w-auto">
-          Subscribe Now
-        </Button>
-      </div>
     </div>
   )
 }

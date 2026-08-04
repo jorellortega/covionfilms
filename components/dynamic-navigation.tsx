@@ -65,6 +65,9 @@ export function DynamicNavigation() {
             <Link href="/admin/ai-info" className="text-foreground hover:text-primary transition-colors">
               AI Info
             </Link>
+            <Link href="/admin/streaming-analytics" className="text-foreground hover:text-primary transition-colors">
+              Streaming Analytics
+            </Link>
           </>
         ) : null}
         <Link href="/subscribe" className="text-foreground hover:text-primary transition-colors">

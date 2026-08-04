@@ -130,7 +130,8 @@ export default function ManageMediaPage() {
             rating_average: 0,
             rating_count: 0,
             cover_image_path: v.cover_image_path || undefined,
-            backup_url: (v as any).backup_url || undefined
+            backup_url: (v as any).backup_url || undefined,
+            view_count: (v as any).view_count ?? 0,
           }
         })
       ]
@@ -796,6 +797,7 @@ export default function ManageMediaPage() {
                   <TableHead>Pricing</TableHead>
                   <TableHead>Genre</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Views</TableHead>
                   <TableHead>Visibility</TableHead>
                   <TableHead>Dashboard</TableHead>
                   <TableHead>Actions</TableHead>
@@ -899,6 +901,9 @@ export default function ManageMediaPage() {
                       <Badge variant="secondary">{video.genre}</Badge>
                     </TableCell>
                     <TableCell>{getStatusBadge(video.status)}</TableCell>
+                    <TableCell>
+                      <span className="font-medium">{(video.view_count ?? 0).toLocaleString()}</span>
+                    </TableCell>
                     <TableCell>
                       <Select 
                         value={video.is_public ? 'public' : 'private'} 

@@ -87,6 +87,7 @@ export function MobileMenu() {
                   </Link>
                 ) : null}
                 {user.role === 'admin' ? (
+                  <>
                   <Link
                     href="/admin/dashboard-control"
                     className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"
@@ -94,6 +95,14 @@ export function MobileMenu() {
                   >
                     Dashboard Control
                   </Link>
+                  <Link
+                    href="/admin/streaming-analytics"
+                    className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    Streaming Analytics
+                  </Link>
+                  </>
                 ) : null}
                 <Link
                   href="/subscribe"

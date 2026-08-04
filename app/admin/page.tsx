@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/components/auth-provider';
+import Link from 'next/link';
 
 export default function AdminPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -198,9 +199,12 @@ export default function AdminPage() {
             <CardDescription>Common administrative tasks</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex gap-4">
+            <div className="flex gap-4 flex-wrap">
               <Button onClick={loadUsers} variant="outline">
                 Refresh Users
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/admin/streaming-analytics">Streaming Analytics</Link>
               </Button>
               <Button 
                 onClick={() => window.open('/signup', '_blank')} 
