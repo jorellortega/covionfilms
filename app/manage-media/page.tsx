@@ -35,6 +35,8 @@ interface Video {
   file_path?: string
   manifest_url?: string
   backup_url?: string
+  cloudflare_stream_uid?: string
+  trailer_cloudflare_stream_uid?: string
   resolution?: string
   status: string
   view_count?: number
@@ -78,7 +80,8 @@ export default function ManageMediaPage() {
     dashboard_section: 'none',
     is_public: true,
     manifest_url: '',
-    backup_url: ''
+    cloudflare_stream_uid: '',
+    trailer_cloudflare_stream_uid: '',
   })
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [coverPreview, setCoverPreview] = useState<string | null>(null)
@@ -289,7 +292,8 @@ export default function ManageMediaPage() {
       dashboard_section: video.dashboard_section || 'none',
       is_public: video.is_public !== false,
       manifest_url: video.manifest_url || video.file_path || '',
-      backup_url: (video as any).backup_url || ''
+      cloudflare_stream_uid: (video as any).cloudflare_stream_uid || '',
+      trailer_cloudflare_stream_uid: (video as any).trailer_cloudflare_stream_uid || '',
     })
     // Set cover preview
     const coverUrl = getCoverImageUrl(video)
@@ -416,19 +420,14 @@ export default function ManageMediaPage() {
         console.log('ℹ️ Editing: Not updating cover_image_path (no new cover uploaded)')
       }
 
-      // Update manifest_url for video_assets table
-      if (table === 'video_assets' && editForm.manifest_url) {
-        updates.manifest_url = editForm.manifest_url
-      }
-
-      // Update file_path for videos table
+      // Update manifest_url / file_path for legacy videos table only
       if (table === 'videos' && editForm.manifest_url) {
         updates.file_path = editForm.manifest_url
       }
 
-      // Update backup_url if provided (for video_assets)
-      if (table === 'video_assets' && editForm.backup_url) {
-        updates.backup_url = editForm.backup_url
+      if (table === 'video_assets') {
+        updates.cloudflare_stream_uid = editForm.cloudflare_stream_uid.trim() || null
+        updates.trailer_cloudflare_stream_uid = editForm.trailer_cloudflare_stream_uid.trim() || null
       }
 
       console.log('💾 Editing: Updating database with:', updates)
@@ -694,7 +693,7 @@ export default function ManageMediaPage() {
             <p className="font-medium text-primary">Main top player (hero video)</p>
             <p className="text-muted-foreground">
               Click the <strong>star button</strong> on a video, or set <strong>Show on Dashboard</strong> to <strong>New Releases</strong>.
-              Video must be <strong>Public</strong> and <strong>Ready</strong>.
+              Video must be <strong>Public</strong> and <strong>Ready</strong>. Set a <strong>Trailer Video ID</strong> in edit to preview a trailer in the hero player while keeping a separate full movie ID.
             </p>
           </div>
           <div className="border-t border-primary/20 pt-4">
@@ -1294,55 +1293,53 @@ export default function ManageMediaPage() {
                 </div>
               </div>
 
-              {/* Video URL Fields */}
-              <div className="space-y-4 pt-2 border-t">
-                <div className="space-y-2">
-                  <Label>Primary Video URL</Label>
-                  <Input
-                    type="url"
-                    value={editForm.manifest_url}
-                    onChange={(e) => setEditForm({ ...editForm, manifest_url: e.target.value })}
-                    placeholder="https://example.com/video.m3u8 or manifest URL"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Main streaming URL (HLS manifest, MP4, or YouTube/Dropbox link)
-                  </p>
+              {editingVideo.source === 'video_assets' ? (
+                <div className="space-y-4 pt-2 border-t">
+                  <div className="space-y-2">
+                    <Label>Full Movie Cloudflare Video ID</Label>
+                    <Input
+                      value={editForm.cloudflare_stream_uid}
+                      onChange={(e) => setEditForm({ ...editForm, cloudflare_stream_uid: e.target.value })}
+                      placeholder="Cloudflare Stream ID for watch page playback"
+                      disabled={uploadingCover}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Used on the watch page for full movie or episode playback.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Trailer Cloudflare Video ID</Label>
+                    <Input
+                      value={editForm.trailer_cloudflare_stream_uid}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, trailer_cloudflare_stream_uid: e.target.value })
+                      }
+                      placeholder="Separate ID for dashboard hero preview"
+                      disabled={uploadingCover}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Plays in the dashboard main player when set. Falls back to the full movie ID if empty.
+                    </p>
+                  </div>
                 </div>
-                
-                <div className="space-y-2">
-                  <Label>Backup Video URL (Optional)</Label>
-                  <div className="flex gap-2">
+              ) : (
+                <div className="space-y-4 pt-2 border-t">
+                  <div className="space-y-2">
+                    <Label>Video URL</Label>
                     <Input
                       type="url"
-                      value={editForm.backup_url}
-                      onChange={(e) => setEditForm({ ...editForm, backup_url: e.target.value })}
-                      placeholder="https://backup.example.com/video.m3u8"
-                      className="flex-1"
+                      value={editForm.manifest_url}
+                      onChange={(e) => setEditForm({ ...editForm, manifest_url: e.target.value })}
+                      placeholder="https://example.com/video.mp4"
+                      disabled={uploadingCover}
                     />
-                    {editForm.backup_url && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          // Swap backup to primary
-                          setEditForm({
-                            ...editForm,
-                            manifest_url: editForm.backup_url,
-                            backup_url: editForm.manifest_url
-                          })
-                        }}
-                        title="Use backup as primary"
-                      >
-                        Swap
-                      </Button>
-                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Legacy video entry — use Upload for new Cloudflare Stream titles.
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Fallback URL if primary fails. Use "Swap" to make backup the primary URL.
-                  </p>
                 </div>
-              </div>
+              )}
             </CardContent>
             <CardFooter className="flex justify-end gap-2">
               <Button 

@@ -57,6 +57,7 @@ export default function UploadPage() {
 function UploadPageContent() {
   const [uploadMode, setUploadMode] = useState<UploadMode>("title")
   const [streamVideoId, setStreamVideoId] = useState("")
+  const [trailerStreamVideoId, setTrailerStreamVideoId] = useState("")
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [contentType, setContentType] = useState("movie")
@@ -69,6 +70,7 @@ function UploadPageContent() {
   const [submitting, setSubmitting] = useState(false)
   const [cloudflareConfigured, setCloudflareConfigured] = useState(true)
   const [preview, setPreview] = useState<LinkResponse | null>(null)
+  const [trailerPreview, setTrailerPreview] = useState<LinkResponse | null>(null)
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -138,6 +140,22 @@ function UploadPageContent() {
     }
   }
 
+  const linkStreamVideo = async (videoId: string) => {
+    const headers = await getAuthHeaders()
+    const response = await fetch("/api/stream/link", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ streamVideoId: videoId }),
+    })
+
+    const data = (await response.json()) as LinkResponse & { error?: string }
+    if (!response.ok) {
+      throw new Error(data.error || "Could not find video in Cloudflare Stream")
+    }
+
+    return data
+  }
+
   const handleLookup = async () => {
     if (!streamVideoId.trim()) {
       toast({ title: "Enter a Video ID", variant: "destructive" })
@@ -145,18 +163,7 @@ function UploadPageContent() {
     }
 
     try {
-      const headers = await getAuthHeaders()
-      const response = await fetch("/api/stream/link", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ streamVideoId }),
-      })
-
-      const data = (await response.json()) as LinkResponse & { error?: string }
-      if (!response.ok) {
-        throw new Error(data.error || "Could not find video in Cloudflare Stream")
-      }
-
+      const data = await linkStreamVideo(streamVideoId)
       setPreview(data)
       if (!title && data.cloudflareName) {
         setTitle(data.cloudflareName.replace(/\.[^/.]+$/, ""))
@@ -173,6 +180,31 @@ function UploadPageContent() {
       toast({
         title: "Lookup failed",
         description: error instanceof Error ? error.message : "Could not link video",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleTrailerLookup = async () => {
+    if (!trailerStreamVideoId.trim()) {
+      toast({ title: "Enter a trailer Video ID", variant: "destructive" })
+      return
+    }
+
+    try {
+      const data = await linkStreamVideo(trailerStreamVideoId)
+      setTrailerPreview(data)
+      toast({
+        title: data.ready ? "Trailer found" : "Trailer found (still processing)",
+        description: data.ready
+          ? "Trailer is ready for the dashboard player."
+          : `Cloudflare status: ${data.status}. You can save it now.`,
+      })
+    } catch (error) {
+      setTrailerPreview(null)
+      toast({
+        title: "Trailer lookup failed",
+        description: error instanceof Error ? error.message : "Could not link trailer",
         variant: "destructive",
       })
     }
@@ -210,6 +242,7 @@ function UploadPageContent() {
     try {
       let manifestUrl: string | null = null
       let cloudflareUid: string | null = null
+      let trailerCloudflareUid: string | null = null
       let duration = 0
       let resolution = "Unknown"
       let thumbnail: string | null = null
@@ -236,11 +269,19 @@ function UploadPageContent() {
         status = data.ready ? "ready" : "processing"
       }
 
+      if (uploadMode === "title" && trailerStreamVideoId.trim()) {
+        const trailerData = trailerPreview?.uid
+          ? trailerPreview
+          : await linkStreamVideo(trailerStreamVideoId)
+        trailerCloudflareUid = trailerData.uid
+      }
+
       const payload: Record<string, unknown> = {
         title,
         description,
         manifest_url: manifestUrl,
         cloudflare_stream_uid: cloudflareUid,
+        trailer_cloudflare_stream_uid: trailerCloudflareUid,
         file_size: null,
         duration,
         resolution,
@@ -419,9 +460,7 @@ function UploadPageContent() {
 
             {(uploadMode === "episode" || contentType !== "series") && (
               <div className="space-y-2">
-                <Label htmlFor="streamVideoId">
-                  Cloudflare Video ID {uploadMode === "episode" ? "*" : "*"}
-                </Label>
+                <Label htmlFor="streamVideoId">Full Movie Video ID *</Label>
                 <div className="flex gap-2">
                   <Input
                     id="streamVideoId"
@@ -438,6 +477,33 @@ function UploadPageContent() {
                     Verify
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  Cloudflare Stream ID for the full movie or episode playback on the watch page.
+                </p>
+              </div>
+            )}
+
+            {uploadMode === "title" && (
+              <div className="space-y-2">
+                <Label htmlFor="trailerStreamVideoId">Trailer Video ID (optional)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="trailerStreamVideoId"
+                    value={trailerStreamVideoId}
+                    onChange={(e) => {
+                      setTrailerStreamVideoId(e.target.value)
+                      setTrailerPreview(null)
+                    }}
+                    placeholder="Separate Cloudflare ID for dashboard preview"
+                    disabled={submitting}
+                  />
+                  <Button type="button" variant="outline" onClick={handleTrailerLookup} disabled={submitting}>
+                    Verify
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Plays in the dashboard hero player. &quot;Watch full video&quot; still links to the full movie.
+                </p>
               </div>
             )}
 
@@ -445,9 +511,19 @@ function UploadPageContent() {
               <div className="rounded-lg border border-green-600/40 bg-green-500/10 p-4 space-y-2 text-sm">
                 <div className="flex items-center gap-2 text-green-400 font-medium">
                   <CheckCircle className="h-4 w-4" />
-                  {preview.ready ? "Video is ready" : `Processing (${preview.status})`}
+                  {preview.ready ? "Full video is ready" : `Processing (${preview.status})`}
                 </div>
                 <p className="text-muted-foreground">ID: {preview.uid}</p>
+              </div>
+            )}
+
+            {trailerPreview && (
+              <div className="rounded-lg border border-blue-600/40 bg-blue-500/10 p-4 space-y-2 text-sm">
+                <div className="flex items-center gap-2 text-blue-400 font-medium">
+                  <CheckCircle className="h-4 w-4" />
+                  {trailerPreview.ready ? "Trailer is ready" : `Trailer processing (${trailerPreview.status})`}
+                </div>
+                <p className="text-muted-foreground">Trailer ID: {trailerPreview.uid}</p>
               </div>
             )}
 

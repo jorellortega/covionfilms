@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Shuffle, Film } from "lucide-react"
 import Image from "next/image"
@@ -8,15 +8,42 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useDashboardVideos } from "@/hooks/use-dashboard-videos"
 import { getCloudflareStreamIframeUrl } from "@/lib/stream-url"
+import { cn } from "@/lib/utils"
 
 interface MovieTrailersProps {
   shuffleMode: boolean
 }
 
+const CONTROLS_HIDE_DELAY_MS = 3000
+
 export function MovieTrailers({ shuffleMode }: MovieTrailersProps) {
   const { videos, loading } = useDashboardVideos("new_releases", 8)
   const [activeIndex, setActiveIndex] = useState(0)
+  const [controlsVisible, setControlsVisible] = useState(true)
+  const hideControlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const router = useRouter()
+
+  const revealControls = useCallback(() => {
+    setControlsVisible(true)
+    if (hideControlsTimeoutRef.current) {
+      clearTimeout(hideControlsTimeoutRef.current)
+    }
+    hideControlsTimeoutRef.current = setTimeout(() => {
+      setControlsVisible(false)
+    }, CONTROLS_HIDE_DELAY_MS)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (hideControlsTimeoutRef.current) {
+        clearTimeout(hideControlsTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    revealControls()
+  }, [activeIndex, revealControls])
 
   useEffect(() => {
     if (videos.length === 0) {
@@ -68,17 +95,24 @@ export function MovieTrailers({ shuffleMode }: MovieTrailersProps) {
     )
   }
 
-  const iframeSrc = activeVideo.cloudflare_stream_uid
-    ? getCloudflareStreamIframeUrl(activeVideo.cloudflare_stream_uid)
+  const playbackUid =
+    activeVideo.trailer_cloudflare_stream_uid || activeVideo.cloudflare_stream_uid
+
+  const iframeSrc = playbackUid
+    ? getCloudflareStreamIframeUrl(playbackUid)
     : null
 
   return (
     <section className="space-y-4">
-      <div className="relative aspect-video w-full max-w-4xl mx-auto overflow-hidden rounded-lg border border-gray-800 neon-border bg-black">
+      <div
+        className="group relative aspect-video w-full max-w-4xl mx-auto overflow-hidden rounded-lg border border-gray-800 neon-border bg-black"
+        onMouseMove={revealControls}
+        onMouseEnter={revealControls}
+      >
         {iframeSrc ? (
           <iframe
             src={iframeSrc}
-            className="w-full h-full border-0"
+            className="relative z-0 w-full h-full border-0"
             allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
             allowFullScreen
             title={activeVideo.title}
@@ -89,43 +123,58 @@ export function MovieTrailers({ shuffleMode }: MovieTrailersProps) {
           </div>
         )}
 
-        <div className="absolute top-2 left-2 w-16 h-24 overflow-hidden rounded border border-white/20 bg-black/50">
-          {activeVideo.cover_image_path ? (
-            <Image
-              src={activeVideo.cover_image_path}
-              alt={activeVideo.title}
-              width={64}
-              height={96}
-              className="object-cover w-full h-full"
-              unoptimized
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <Film className="h-6 w-6 text-white/60" />
+        <div className="absolute inset-0 z-10 pointer-events-none">
+          <div className="absolute top-2 left-2 w-16 h-24 overflow-hidden rounded border border-white/20 bg-black/50">
+            {activeVideo.cover_image_path ? (
+              <Image
+                src={activeVideo.cover_image_path}
+                alt={activeVideo.title}
+                width={64}
+                height={96}
+                className="object-cover w-full h-full"
+                unoptimized
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <Film className="h-6 w-6 text-white/60" />
+              </div>
+            )}
+          </div>
+
+          {videos.length > 1 && (
+            <div className="absolute top-2 right-2 pointer-events-auto">
+              <Button
+                onClick={handleShuffle}
+                className="bg-black/70 text-white hover:bg-black/90 glass shrink-0"
+              >
+                <Shuffle className="mr-2 h-4 w-4" />
+                Shuffle
+              </Button>
             </div>
           )}
-        </div>
 
-        <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center gap-4">
-          <div>
-            <h2 className="text-2xl font-bold text-white drop-shadow-lg">{activeVideo.title}</h2>
-            <Button
-              variant="link"
-              className="text-primary p-0 h-auto"
-              onClick={() => router.push(`/watch/${activeVideo.id}`)}
-            >
-              Watch full video
-            </Button>
-          </div>
-          {videos.length > 1 && (
-            <Button
-              onClick={handleShuffle}
-              className="bg-black/70 text-white hover:bg-black/90 glass shrink-0"
-            >
-              <Shuffle className="mr-2 h-4 w-4" />
-              Shuffle
-            </Button>
-          )}
+          <h2
+            className={cn(
+              "absolute top-2 left-20 right-4 text-xl sm:text-2xl font-bold text-white drop-shadow-lg truncate transition-opacity duration-300",
+              controlsVisible ? "opacity-100" : "opacity-0"
+            )}
+          >
+            {activeVideo.title}
+          </h2>
+
+          <Button
+            size="sm"
+            variant="link"
+            className={cn(
+              "absolute bottom-5 left-1/2 -translate-x-1/2 text-primary h-auto p-0 text-base sm:text-lg font-semibold drop-shadow-lg hover:text-primary/90 transition-opacity duration-300",
+              controlsVisible
+                ? "opacity-100 pointer-events-auto"
+                : "opacity-0 pointer-events-none"
+            )}
+            onClick={() => router.push(`/watch/${activeVideo.id}`)}
+          >
+            Watch full video
+          </Button>
         </div>
       </div>
 
