@@ -46,6 +46,10 @@ export default function WatchPage() {
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [seriesId, setSeriesId] = useState<string | null>(null)
+  const [parentMovieInfo, setParentMovieInfo] = useState<{
+    producer?: string | null
+    release_year?: number | null
+  } | null>(null)
 
   const hasAccess = accessInfo?.hasAccess ?? false
   const { recordPlay } = useRecordPlay(params.id as string)
@@ -141,6 +145,17 @@ export default function WatchPage() {
         }
 
         setVideoData(data)
+
+        if (data.parent_id) {
+          const { data: parent } = await supabase
+            .from('video_assets')
+            .select('producer, release_year')
+            .eq('id', data.parent_id)
+            .maybeSingle()
+          setParentMovieInfo(parent)
+        } else {
+          setParentMovieInfo(null)
+        }
 
         let resolvedSeriesId: string | null = null
         if (data.parent_id) {
@@ -705,25 +720,29 @@ export default function WatchPage() {
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
-                  <span className="font-medium">Views:</span>
+                  <span className="font-medium">Views</span>
                   <p className="text-muted-foreground">
                     {(videoData.view_count ?? 0).toLocaleString()}
                   </p>
                 </div>
                 <div>
-                  <span className="font-medium">Duration:</span>
+                  <span className="font-medium">Duration</span>
                   <p className="text-muted-foreground">
-                    {videoData.duration ? `${Math.floor(videoData.duration / 60)}:${(videoData.duration % 60).toString().padStart(2, '0')}` : 'Unknown'}
+                    {videoData.duration
+                      ? `${Math.floor(videoData.duration / 60)}:${(videoData.duration % 60).toString().padStart(2, '0')}`
+                      : 'Unknown'}
                   </p>
                 </div>
                 <div>
-                  <span className="font-medium">Resolution:</span>
-                  <p className="text-muted-foreground">{videoData.resolution || 'Unknown'}</p>
+                  <span className="font-medium">Producer</span>
+                  <p className="text-muted-foreground">
+                    {videoData.producer || parentMovieInfo?.producer || '—'}
+                  </p>
                 </div>
                 <div>
-                  <span className="font-medium">File Size:</span>
+                  <span className="font-medium">Year</span>
                   <p className="text-muted-foreground">
-                    {videoData.file_size ? `${(videoData.file_size / (1024 * 1024)).toFixed(2)} MB` : 'Unknown'}
+                    {videoData.release_year || parentMovieInfo?.release_year || '—'}
                   </p>
                 </div>
               </div>

@@ -19,6 +19,8 @@ export type VideoAsset = {
   manifest_url?: string | null
   cloudflare_stream_uid?: string | null
   duration?: number | null
+  producer?: string | null
+  release_year?: number | null
   resolution?: string | null
   file_size?: number | null
   cover_image_path?: string | null

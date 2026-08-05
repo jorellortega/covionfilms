@@ -37,6 +37,8 @@ interface Video {
   backup_url?: string
   cloudflare_stream_uid?: string
   trailer_cloudflare_stream_uid?: string
+  producer?: string
+  release_year?: number
   resolution?: string
   status: string
   view_count?: number
@@ -82,6 +84,8 @@ export default function ManageMediaPage() {
     manifest_url: '',
     cloudflare_stream_uid: '',
     trailer_cloudflare_stream_uid: '',
+    producer: '',
+    release_year: '',
   })
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [coverPreview, setCoverPreview] = useState<string | null>(null)
@@ -294,6 +298,8 @@ export default function ManageMediaPage() {
       manifest_url: video.manifest_url || video.file_path || '',
       cloudflare_stream_uid: (video as any).cloudflare_stream_uid || '',
       trailer_cloudflare_stream_uid: (video as any).trailer_cloudflare_stream_uid || '',
+      producer: (video as any).producer || '',
+      release_year: (video as any).release_year ? String((video as any).release_year) : '',
     })
     // Set cover preview
     const coverUrl = getCoverImageUrl(video)
@@ -428,6 +434,9 @@ export default function ManageMediaPage() {
       if (table === 'video_assets') {
         updates.cloudflare_stream_uid = editForm.cloudflare_stream_uid.trim() || null
         updates.trailer_cloudflare_stream_uid = editForm.trailer_cloudflare_stream_uid.trim() || null
+        updates.producer = editForm.producer.trim() || null
+        const parsedYear = editForm.release_year.trim() ? parseInt(editForm.release_year, 10) : NaN
+        updates.release_year = Number.isFinite(parsedYear) ? parsedYear : null
       }
 
       console.log('💾 Editing: Updating database with:', updates)
@@ -1157,6 +1166,31 @@ export default function ManageMediaPage() {
                   disabled={uploadingCover}
                 />
               </div>
+              {editingVideo.source === 'video_assets' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Producer</Label>
+                    <Input
+                      value={editForm.producer}
+                      onChange={(e) => setEditForm({ ...editForm, producer: e.target.value })}
+                      placeholder="Production company or producer"
+                      disabled={uploadingCover}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Year</Label>
+                    <Input
+                      type="number"
+                      min="1900"
+                      max="2100"
+                      value={editForm.release_year}
+                      onChange={(e) => setEditForm({ ...editForm, release_year: e.target.value })}
+                      placeholder="2026"
+                      disabled={uploadingCover}
+                    />
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Content Type</Label>

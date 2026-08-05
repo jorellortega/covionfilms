@@ -62,6 +62,8 @@ function UploadPageContent() {
   const [description, setDescription] = useState("")
   const [contentType, setContentType] = useState("movie")
   const [genre, setGenre] = useState("")
+  const [producer, setProducer] = useState("")
+  const [releaseYear, setReleaseYear] = useState("")
   const [dashboardSection, setDashboardSection] = useState("none")
   const [isFree, setIsFree] = useState(false)
   const [episodeNumber, setEpisodeNumber] = useState("1")
@@ -293,6 +295,12 @@ function UploadPageContent() {
         is_public: true,
         is_free: isFree,
         cover_image_path: thumbnail,
+      }
+
+      if (uploadMode === "title") {
+        payload.producer = producer.trim() || null
+        const parsedYear = releaseYear.trim() ? parseInt(releaseYear, 10) : NaN
+        payload.release_year = Number.isFinite(parsedYear) ? parsedYear : null
       }
 
       if (uploadMode === "episode") {
@@ -550,6 +558,34 @@ function UploadPageContent() {
                 required
               />
             </div>
+
+            {uploadMode === "title" && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="producer">Producer</Label>
+                  <Input
+                    id="producer"
+                    value={producer}
+                    onChange={(e) => setProducer(e.target.value)}
+                    disabled={submitting}
+                    placeholder="Production company or producer name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="releaseYear">Year</Label>
+                  <Input
+                    id="releaseYear"
+                    type="number"
+                    min="1900"
+                    max="2100"
+                    value={releaseYear}
+                    onChange={(e) => setReleaseYear(e.target.value)}
+                    disabled={submitting}
+                    placeholder="2026"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Genre *</Label>
