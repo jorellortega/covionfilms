@@ -131,7 +131,7 @@ export function MovieTrailers({ shuffleMode }: MovieTrailersProps) {
                 alt={activeVideo.title}
                 width={64}
                 height={96}
-                className="object-cover w-full h-full"
+                className="object-contain w-full h-full bg-black"
                 unoptimized
               />
             ) : (
@@ -195,7 +195,7 @@ export function MovieTrailers({ shuffleMode }: MovieTrailersProps) {
                   alt={video.title}
                   width={96}
                   height={56}
-                  className="object-cover w-full h-full"
+                  className="object-contain w-full h-full bg-black"
                   unoptimized
                 />
               ) : (

@@ -203,19 +203,20 @@ export function NewReleases() {
                   </div>
                   
                   {video.cover_image_path ? (
-                    <Image
-                      src={video.cover_image_path}
-                      alt={video.title}
-                      width={150}
-                      height={225}
-                      className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
-                      unoptimized
-                      onError={(e) => {
-                        // Fallback to placeholder if image fails to load
-                        const target = e.target as HTMLImageElement
-                        target.src = "/placeholder.svg"
-                      }}
-                    />
+                    <div className="w-full h-full bg-black flex items-center justify-center">
+                      <Image
+                        src={video.cover_image_path}
+                        alt={video.title}
+                        width={150}
+                        height={225}
+                        className="object-contain w-full h-full group-hover:scale-105 transition-transform duration-300"
+                        unoptimized
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement
+                          target.src = "/placeholder.svg"
+                        }}
+                      />
+                    </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center h-full space-y-2 p-4">
                       <Film className="h-12 w-12 text-muted-foreground opacity-50 group-hover:opacity-70 transition-opacity" />

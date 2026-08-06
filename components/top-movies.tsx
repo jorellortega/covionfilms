@@ -36,7 +36,7 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
                   src={movie.cover_image_path}
                   alt={movie.title}
                   fill
-                  className="object-cover transition-opacity duration-300 group-hover:opacity-75"
+                  className="object-contain bg-black transition-opacity duration-300 group-hover:opacity-75"
                   unoptimized
                 />
               ) : (
@@ -70,7 +70,7 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
                 src={movie.cover_image_path}
                 alt={movie.title}
                 fill
-                className="object-cover"
+                className="object-contain bg-black"
                 unoptimized
               />
             ) : (
@@ -102,7 +102,7 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
                 src={movie.cover_image_path}
                 alt={movie.title}
                 fill
-                className="object-cover rounded-md"
+                className="object-contain bg-black rounded-md"
                 unoptimized
               />
             ) : (

@@ -125,29 +125,19 @@ export default function ManageMediaPage() {
           file_size: v.file_size_bytes,
           cover_image_path: v.cover_image_path || undefined
         })),
-        ...(videoAssetsData.data || []).map(v => {
-          console.log('Video asset cover_image_path:', v.id, v.title, ':', v.cover_image_path)
-          return {
+        ...(videoAssetsData.data || []).map((v) => ({
             ...v,
             source: 'video_assets' as const,
             duration_seconds: v.duration,
             file_size_bytes: v.file_size,
             file_path: v.manifest_url,
-            view_count: 0,
+            view_count: (v as { view_count?: number }).view_count ?? 0,
             rating_average: 0,
             rating_count: 0,
             cover_image_path: v.cover_image_path || undefined,
-            backup_url: (v as any).backup_url || undefined,
-            view_count: (v as any).view_count ?? 0,
-          }
-        })
+            backup_url: (v as { backup_url?: string }).backup_url || undefined,
+          }))
       ]
-      
-      console.log('All videos after normalization:', allVideos.map(v => ({
-        id: v.id,
-        title: v.title,
-        cover_image_path: v.cover_image_path
-      })))
 
       // Sort by created_at
       allVideos.sort((a, b) => 
@@ -330,70 +320,37 @@ export default function ManageMediaPage() {
       // Upload cover image if provided
       let coverImagePath: string | null = null
       if (coverFile) {
-        console.log('📸 Editing: Uploading cover image:', coverFile.name, 'Size:', coverFile.size, 'Type:', coverFile.type)
-        
-        // Try both buckets - videos and covionfilms
-        const bucketsToTry = ['covionfilms', 'videos']
-        let uploadSuccess = false
-        
-        for (const bucketName of bucketsToTry) {
-          if (uploadSuccess) break
-          
-          try {
-            const coverFileExt = coverFile.name.split('.').pop()
-            const coverFileName = `${editingVideo.id}_cover.${coverFileExt}`
-            const coverPath = `covers/${coverFileName}`
-            
-            console.log(`📸 Editing: Trying bucket "${bucketName}" with path:`, coverPath)
-            
-            const { data: uploadData, error: coverError } = await supabase.storage
-              .from(bucketName)
-              .upload(coverPath, coverFile, {
-                contentType: coverFile.type,
-                upsert: true
-              })
-            
-            if (coverError) {
-              console.error(`❌ Editing: Failed to upload to "${bucketName}":`, coverError)
-              console.error('Cover upload error details:', JSON.stringify(coverError, null, 2))
-              continue // Try next bucket
-            } else {
-              console.log(`✅ Editing: Cover image uploaded successfully to "${bucketName}":`, uploadData)
-              // Get public URL
-              const { data: coverUrlData } = supabase.storage
-                .from(bucketName)
-                .getPublicUrl(coverPath)
-              
-              coverImagePath = coverUrlData?.publicUrl || null
-              console.log('✅ Editing: Cover image public URL:', coverImagePath)
-              
-              if (!coverImagePath) {
-                console.error('❌ Editing: Failed to get public URL for cover image')
-                continue // Try next bucket
-              }
-              
-              uploadSuccess = true
-              break
-            }
-          } catch (coverErr) {
-            console.error(`❌ Editing: Error uploading to "${bucketName}" (catch):`, coverErr)
-            continue // Try next bucket
-          }
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (!session?.access_token) {
+          throw new Error('You must be signed in to upload a cover image.')
         }
-        
-        if (!uploadSuccess) {
-          console.error('❌ Editing: Failed to upload cover image to all buckets')
-          toast({
-            title: "Warning",
-            description: "Video updated but cover image upload failed. Check console for details.",
-            variant: "default"
-          })
+
+        const formData = new FormData()
+        formData.append('file', coverFile)
+        formData.append('videoId', editingVideo.id)
+
+        const uploadResponse = await fetch('/api/media/cover', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: formData,
+        })
+
+        const uploadResult = (await uploadResponse.json()) as {
+          coverImagePath?: string
+          error?: string
         }
-      } else {
-        console.log('ℹ️ Editing: No cover file provided for upload')
+
+        if (!uploadResponse.ok) {
+          throw new Error(uploadResult.error || 'Cover image upload failed')
+        }
+
+        coverImagePath = uploadResult.coverImagePath || null
       }
-      
-      console.log('📸 Editing: Final coverImagePath to save:', coverImagePath)
 
       const table = editingVideo.source || 'videos'
       const updates: any = {
@@ -421,9 +378,6 @@ export default function ManageMediaPage() {
       // Update cover_image_path if new cover was uploaded
       if (coverImagePath) {
         updates.cover_image_path = coverImagePath
-        console.log('💾 Editing: Will update cover_image_path to:', coverImagePath)
-      } else {
-        console.log('ℹ️ Editing: Not updating cover_image_path (no new cover uploaded)')
       }
 
       // Update manifest_url / file_path for legacy videos table only
@@ -439,15 +393,11 @@ export default function ManageMediaPage() {
         updates.release_year = Number.isFinite(parsedYear) ? parsedYear : null
       }
 
-      console.log('💾 Editing: Updating database with:', updates)
-
-      const { data: updateResult, error } = await supabase
+      const { error } = await supabase
         .from(table)
         .update(updates)
         .eq('id', editingVideo.id)
         .select()
-      
-      console.log('💾 Editing: Update result:', updateResult)
 
       if (error) throw error
 
@@ -590,60 +540,34 @@ export default function ManageMediaPage() {
 
   const getCoverImageUrl = (video: Video): string | null => {
     if (!video.cover_image_path) {
-      console.log('No cover_image_path for video:', video.id, video.title)
       return null
     }
-    
-    console.log('Cover image path for video:', video.id, video.title, ':', video.cover_image_path)
-    
-    // If it's already a full URL, return it
+
     if (video.cover_image_path.startsWith('http://') || video.cover_image_path.startsWith('https://')) {
-      console.log('Using full URL:', video.cover_image_path)
       return video.cover_image_path
     }
-    
-    // If it's a storage path, try both buckets
+
     if (video.cover_image_path.startsWith('videos/') || video.cover_image_path.startsWith('covers/')) {
-      // Try both buckets
       for (const bucketName of ['covionfilms', 'videos']) {
-        try {
-          const { data } = supabase.storage
-            .from(bucketName)
-            .getPublicUrl(video.cover_image_path)
-          const url = data?.publicUrl || null
-          if (url) {
-            console.log(`Converted storage path to URL using "${bucketName}":`, video.cover_image_path, '->', url)
-            return url
-          }
-        } catch (err) {
-          console.log(`Failed to get URL from "${bucketName}":`, err)
+        const { data } = supabase.storage.from(bucketName).getPublicUrl(video.cover_image_path)
+        if (data?.publicUrl) {
+          return data.publicUrl
         }
       }
       return null
     }
-    
-    // If it starts with /, it's a relative path
+
     if (video.cover_image_path.startsWith('/')) {
-      console.log('Using relative path:', video.cover_image_path)
       return video.cover_image_path
     }
-    
-    // Try to get public URL from storage (assume it's a storage path without prefix)
-    // Try both buckets
+
     for (const bucketName of ['covionfilms', 'videos']) {
-      try {
-        const { data } = supabase.storage
-          .from(bucketName)
-          .getPublicUrl(video.cover_image_path)
-        const url = data?.publicUrl || null
-        if (url) {
-          console.log(`Tried to get public URL from "${bucketName}":`, video.cover_image_path, '->', url)
-          return url
-        }
-      } catch (err) {
-        console.log(`Failed to get URL from "${bucketName}":`, err)
+      const { data } = supabase.storage.from(bucketName).getPublicUrl(video.cover_image_path)
+      if (data?.publicUrl) {
+        return data.publicUrl
       }
     }
+
     return null
   }
 
@@ -817,27 +741,22 @@ export default function ManageMediaPage() {
                     <TableCell>
                       {(() => {
                         const coverUrl = getCoverImageUrl(video)
-                        console.log('Rendering cover for video:', video.id, video.title, 'URL:', coverUrl, 'Original path:', video.cover_image_path)
                         return coverUrl ? (
-                          <Image
-                            src={coverUrl}
-                            alt={video.title}
-                            width={100}
-                            height={56}
-                            className="rounded object-cover"
-                            unoptimized
-                            onError={(e) => {
-                              console.error('Image failed to load:', coverUrl, 'for video:', video.id, 'Original path:', video.cover_image_path)
-                              // Fallback to placeholder if image fails to load
-                              const target = e.target as HTMLImageElement
-                              target.src = "/placeholder.svg"
-                            }}
-                            onLoad={() => {
-                              console.log('Image loaded successfully:', coverUrl)
-                            }}
-                          />
+                          <div className="w-[68px] h-[100px] relative rounded overflow-hidden bg-black">
+                            <Image
+                              src={coverUrl}
+                              alt={video.title}
+                              fill
+                              className="object-contain"
+                              unoptimized
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement
+                                target.src = "/placeholder.svg"
+                              }}
+                            />
+                          </div>
                         ) : (
-                          <div className="w-[100px] h-[56px] bg-muted rounded flex items-center justify-center">
+                          <div className="w-[68px] h-[100px] bg-muted rounded flex items-center justify-center">
                             <Film className="h-6 w-6 text-muted-foreground" />
                           </div>
                         )
