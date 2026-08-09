@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchDashboardVideos, type DashboardVideo } from '@/lib/dashboard-videos'
+import {
+  fetchDashboardVideos,
+  fetchTopMovies,
+  type DashboardVideo,
+} from '@/lib/dashboard-videos'
 
 export type { DashboardVideo }
 
@@ -10,7 +14,10 @@ export function useDashboardVideos(section: string, limit = 10) {
   const fetchVideos = useCallback(async () => {
     try {
       setLoading(true)
-      const results = await fetchDashboardVideos(section, limit)
+      const results =
+        section === 'top_movies'
+          ? await fetchTopMovies(limit)
+          : await fetchDashboardVideos(section, limit)
       setVideos(results)
     } catch (error) {
       console.error(`Error fetching dashboard videos for ${section}:`, error)

@@ -7,6 +7,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useDashboardVideos } from "@/hooks/use-dashboard-videos"
+import { useAuth } from "@/components/auth-provider"
 import { getCloudflareStreamIframeUrl } from "@/lib/stream-url"
 import { cn } from "@/lib/utils"
 
@@ -18,6 +19,9 @@ const CONTROLS_HIDE_DELAY_MS = 3000
 
 export function MovieTrailers({ shuffleMode }: MovieTrailersProps) {
   const { videos: allVideos, loading } = useDashboardVideos("new_releases", 8)
+  const { user } = useAuth()
+  const canManageMedia =
+    user?.role === "admin" || user?.role === "management" || user?.role === "creator"
   // Dashboard hero plays trailers only — never the full movie stream
   const videos = allVideos.filter((video) => Boolean(video.trailer_cloudflare_stream_uid))
   const [activeIndex, setActiveIndex] = useState(0)
@@ -90,12 +94,18 @@ export function MovieTrailers({ shuffleMode }: MovieTrailersProps) {
         <div className="relative aspect-video w-full max-w-4xl mx-auto overflow-hidden rounded-lg border border-gray-800 flex flex-col items-center justify-center bg-card gap-3 p-6 text-center">
           <Film className="h-12 w-12 text-muted-foreground" />
           <p className="text-muted-foreground">
-            No trailers in the main player yet. In{" "}
-            <Link href="/manage-media" className="text-primary underline">
-              Manage Media
-            </Link>
-            , set a video&apos;s dashboard section to <strong>New Releases</strong> and add a{" "}
-            <strong>Trailer Cloudflare Video ID</strong>.
+            {canManageMedia ? (
+              <>
+                No trailers in the main player yet. In{" "}
+                <Link href="/manage-media" className="text-primary underline">
+                  Manage Media
+                </Link>
+                , set a video&apos;s dashboard section to <strong>New Releases</strong> and add a{" "}
+                <strong>Trailer Cloudflare Video ID</strong>.
+              </>
+            ) : (
+              <>Featured trailers will appear here soon.</>
+            )}
           </p>
         </div>
       </section>

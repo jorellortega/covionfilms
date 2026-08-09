@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/components/ui/use-toast"
-import { Link2, AlertCircle, CheckCircle, Film, Layers } from "lucide-react"
+import { Link2, AlertCircle, CheckCircle, Film, Layers, ImageIcon, X } from "lucide-react"
+import Image from "next/image"
 import { supabase } from "@/lib/supabaseClient"
 import { useAuth } from "@/components/auth-provider"
 
@@ -73,6 +74,8 @@ function UploadPageContent() {
   const [cloudflareConfigured, setCloudflareConfigured] = useState(true)
   const [preview, setPreview] = useState<LinkResponse | null>(null)
   const [trailerPreview, setTrailerPreview] = useState<LinkResponse | null>(null)
+  const [coverFile, setCoverFile] = useState<File | null>(null)
+  const [coverPreview, setCoverPreview] = useState<string | null>(null)
 
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -91,7 +94,7 @@ function UploadPageContent() {
     { value: "new_releases", label: "New Releases" },
     { value: "top_movies", label: "Top Movies" },
     { value: "trending", label: "Trending Now" },
-    { value: "coming_soon", label: "Coming Soon" },
+    { value: "coming_soon", label: "Upcoming Movies" },
     { value: "none", label: "No Section" },
   ]
 
@@ -234,9 +237,6 @@ function UploadPageContent() {
         toast({ title: "Episode requires parent, episode number, and video ID", variant: "destructive" })
         return
       }
-    } else if (contentType !== "series" && !streamVideoId) {
-      toast({ title: "Movies need a Cloudflare Video ID", variant: "destructive" })
-      return
     }
 
     setSubmitting(true)
@@ -248,14 +248,14 @@ function UploadPageContent() {
       let duration = 0
       let resolution = "Unknown"
       let thumbnail: string | null = null
-      let status = "ready"
+      let status = streamVideoId.trim() ? "ready" : "ready"
 
-      if (streamVideoId) {
+      if (streamVideoId.trim()) {
         const headers = await getAuthHeaders()
         const response = await fetch("/api/stream/link", {
           method: "POST",
           headers,
-          body: JSON.stringify({ streamVideoId }),
+          body: JSON.stringify({ streamVideoId: streamVideoId.trim() }),
         })
 
         const data = (await response.json()) as LinkResponse & { error?: string }
@@ -276,6 +276,9 @@ function UploadPageContent() {
           ? trailerPreview
           : await linkStreamVideo(trailerStreamVideoId)
         trailerCloudflareUid = trailerData.uid
+        if (!thumbnail && trailerData.thumbnail) {
+          thumbnail = trailerData.thumbnail
+        }
       }
 
       const payload: Record<string, unknown> = {
@@ -318,14 +321,65 @@ function UploadPageContent() {
         throw new Error(dbError.message)
       }
 
+      if (coverFile && inserted?.id) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (!session?.access_token) {
+          throw new Error("Signed in session required to upload cover image")
+        }
+
+        const formData = new FormData()
+        formData.append("file", coverFile)
+        formData.append("videoId", inserted.id)
+
+        const uploadResponse = await fetch("/api/media/cover", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: formData,
+        })
+
+        const uploadResult = (await uploadResponse.json()) as {
+          coverImagePath?: string
+          error?: string
+        }
+
+        if (!uploadResponse.ok) {
+          throw new Error(uploadResult.error || "Cover image upload failed")
+        }
+
+        if (uploadResult.coverImagePath) {
+          const updateResponse = await fetch("/api/media/update", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              videoId: inserted.id,
+              updates: { cover_image_path: uploadResult.coverImagePath },
+            }),
+          })
+          const updateResult = await updateResponse.json()
+          if (!updateResponse.ok) {
+            throw new Error(updateResult.error || "Failed to save cover image")
+          }
+        }
+      }
+
       toast({
         title: uploadMode === "episode" ? "Episode added!" : "Title added!",
         description:
           uploadMode === "episode"
             ? `Episode ${episodeNumber} is now part of the series.`
-            : contentType === "series"
-              ? "Series created. Add episodes next."
-              : "Your video is in the catalog.",
+            : !streamVideoId.trim()
+              ? "Poster listing created. Add a Full Movie Video ID later when the file is ready."
+              : contentType === "series"
+                ? "Series created. Add episodes next."
+                : "Your video is in the catalog.",
       })
 
       if (uploadMode === "episode") {
@@ -336,6 +390,8 @@ function UploadPageContent() {
         setTitle("")
         setDescription("")
         setPreview(null)
+        setCoverFile(null)
+        setCoverPreview(null)
         setParentId(inserted.id)
         await loadParents()
       } else {
@@ -468,7 +524,9 @@ function UploadPageContent() {
 
             {(uploadMode === "episode" || contentType !== "series") && (
               <div className="space-y-2">
-                <Label htmlFor="streamVideoId">Full Movie Video ID *</Label>
+                <Label htmlFor="streamVideoId">
+                  Full Movie Video ID {uploadMode === "episode" ? "*" : "(optional)"}
+                </Label>
                 <div className="flex gap-2">
                   <Input
                     id="streamVideoId"
@@ -479,14 +537,16 @@ function UploadPageContent() {
                     }}
                     placeholder="6238e1c7534547d1f1bf4c1636eba0be"
                     disabled={submitting}
-                    required={uploadMode === "episode" || contentType !== "series"}
+                    required={uploadMode === "episode"}
                   />
                   <Button type="button" variant="outline" onClick={handleLookup} disabled={submitting}>
                     Verify
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Cloudflare Stream ID for the full movie or episode playback on the watch page.
+                  {uploadMode === "episode"
+                    ? "Cloudflare Stream ID for episode playback on the watch page."
+                    : "Leave blank for upcoming titles — add the Stream ID later when the video is ready."}
                 </p>
               </div>
             )}
@@ -546,6 +606,70 @@ function UploadPageContent() {
                 placeholder={uploadMode === "episode" ? "Episode 1" : "Movie or series title"}
               />
             </div>
+
+            {uploadMode === "title" && (
+              <div className="space-y-2">
+                <Label htmlFor="coverImage">Poster / Cover Image</Label>
+                <div className="flex items-start gap-4">
+                  <div className="flex-1 border-2 border-dashed border-primary/40 rounded-lg p-4 text-center hover:border-primary transition-colors bg-card/40">
+                    <input
+                      type="file"
+                      id="coverImage"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      disabled={submitting}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null
+                        setCoverFile(file)
+                        if (file) {
+                          const reader = new FileReader()
+                          reader.onload = () => setCoverPreview(reader.result as string)
+                          reader.readAsDataURL(file)
+                        } else {
+                          setCoverPreview(null)
+                        }
+                      }}
+                    />
+                    <label htmlFor="coverImage" className="cursor-pointer block">
+                      {coverPreview ? (
+                        <div className="relative mx-auto h-48 w-32 overflow-hidden rounded">
+                          <Image
+                            src={coverPreview}
+                            alt="Cover preview"
+                            fill
+                            className="object-cover"
+                            unoptimized
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-2 py-6">
+                          <ImageIcon className="mx-auto h-12 w-12 text-primary" />
+                          <p className="text-sm font-medium">Click to upload cover / poster</p>
+                          <p className="text-xs text-muted-foreground">
+                            Needed for Upcoming Movies and dashboard posters
+                          </p>
+                        </div>
+                      )}
+                    </label>
+                  </div>
+                  {coverPreview && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      disabled={submitting}
+                      onClick={() => {
+                        setCoverFile(null)
+                        setCoverPreview(null)
+                      }}
+                      title="Remove cover"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="description">Description *</Label>

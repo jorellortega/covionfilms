@@ -7,6 +7,7 @@ import { TopMovies } from "@/components/top-movies"
 import { TopCreators } from "@/components/top-creators"
 import { ReelsRow } from "@/components/reels-row"
 import { NewReleases } from "@/components/new-releases"
+import { UpcomingMovies } from "@/components/upcoming-movies"
 import { UnseenMovies } from "@/components/unseen-movies"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
@@ -19,6 +20,9 @@ import { useDashboardVisibility } from "@/hooks/use-dashboard-visibility"
 
 // UNDO: Set to true to restore the fixed bottom Vee / Clips / Music buttons on the dashboard.
 const SHOW_BOTTOM_NAV_BUTTONS = false
+
+// UNDO: Set to true to restore AI Content, Trending Reels, and Top Creators on the dashboard.
+const SHOW_PLACEHOLDER_DASHBOARD_SECTIONS = false
 
 export default function DashboardPage() {
   const [shuffleMode, setShuffleMode] = useState<"reels" | null>(null)
@@ -153,38 +157,33 @@ export default function DashboardPage() {
         {isVisible('top_movies') && (
           <TopMovies shuffleMode={shuffleMode === "reels"} />
         )}
-        {isVisible('ai_content') && (
+
+        {isVisible('coming_soon') && (
+          <UpcomingMovies />
+        )}
+
+        {SHOW_PLACEHOLDER_DASHBOARD_SECTIONS && isVisible('ai_content') && (
           <AIContent />
         )}
-        {isVisible('trending_reels') && (
+        {SHOW_PLACEHOLDER_DASHBOARD_SECTIONS && isVisible('trending_reels') && (
           <ReelsRow shuffleMode={shuffleMode === "reels"} />
         )}
-        {isVisible('top_creators') && (
+        {SHOW_PLACEHOLDER_DASHBOARD_SECTIONS && isVisible('top_creators') && (
           <TopCreators />
         )}
 
-        {isVisible('featured_movies') || isVisible('coming_soon') ? (
+        {isVisible('featured_movies') && (
           <section className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 mt-8">
-            {isVisible('featured_movies') && (
-              <Card className="border border-gray-700 bg-card">
-                <CardHeader>
-                  <CardTitle className="text-primary">Featured Movies</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-muted-foreground">Discover our latest and greatest films.</p>
-                </CardContent>
-              </Card>
-            )}
-            {isVisible('coming_soon') && (
-              <Card className="border border-gray-700 bg-card">
-                <CardTitle className="text-primary">Coming Soon</CardTitle>
-                <CardContent>
-                  <p className="text-muted-foreground">Get a sneak peek at upcoming titles.</p>
-                </CardContent>
-              </Card>
-            )}
+            <Card className="border border-gray-700 bg-card">
+              <CardHeader>
+                <CardTitle className="text-primary">Featured Movies</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">Discover our latest and greatest films.</p>
+              </CardContent>
+            </Card>
           </section>
-        ) : null}
+        )}
 
         {isVisible('unseen_movies') && (
           <UnseenMovies />

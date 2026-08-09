@@ -26,7 +26,7 @@ const SECTION_LABELS: { [key: string]: string } = {
   new_releases: 'New Releases',
   top_creators: 'Top 10 Creators',
   featured_movies: 'Featured Movies',
-  coming_soon: 'Coming Soon',
+  coming_soon: 'Upcoming Movies',
   unseen_movies: 'Unseen Movies',
   search_bar: 'Search Bar',
   vee_reels: 'Vee/Reels Button',

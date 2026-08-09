@@ -62,9 +62,9 @@ interface Video {
 const DASHBOARD_SECTIONS = [
   { value: 'new_releases', label: 'New Releases', description: 'Main top player + new releases row' },
   { value: 'featured', label: 'Featured Movies', description: 'Featured section (optional)' },
-  { value: 'top_movies', label: 'Top Movies', description: 'Top 10 Movies section' },
+  { value: 'top_movies', label: 'Top Movies', description: 'Top 10 Movies section (falls back to most viewed if empty)' },
   { value: 'trending', label: 'Trending Now', description: 'Trending reels row' },
-  { value: 'coming_soon', label: 'Coming Soon', description: 'Coming soon section' },
+  { value: 'coming_soon', label: 'Upcoming Movies', description: 'Upcoming / coming soon row on dashboard' },
   { value: 'none', label: 'Hidden', description: 'Not shown on dashboard' }
 ]
 

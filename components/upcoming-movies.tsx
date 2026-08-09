@@ -2,8 +2,8 @@
 
 import { useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Film, ViewIcon } from "lucide-react"
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
+import { Film, Clock, ViewIcon } from "lucide-react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
@@ -11,19 +11,13 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/components/auth-provider"
 import { useDashboardVideos } from "@/hooks/use-dashboard-videos"
 
-interface TopMoviesProps {
-  shuffleMode: boolean
-}
-
-export function TopMovies({ shuffleMode }: TopMoviesProps) {
-  const { videos, loading } = useDashboardVideos("top_movies", 10)
+export function UpcomingMovies() {
+  const { videos, loading } = useDashboardVideos("coming_soon", 12)
   const [viewMode, setViewMode] = useState<"scroll" | "grid" | "list">("scroll")
   const router = useRouter()
   const { user } = useAuth()
   const canManageMedia =
     user?.role === "admin" || user?.role === "management" || user?.role === "creator"
-
-  const topMovies = shuffleMode ? [...videos].sort(() => Math.random() - 0.5) : videos
 
   const handleMovieClick = (id: string) => {
     router.push(`/watch/${id}`)
@@ -31,13 +25,19 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
 
   const renderGridView = () => (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 p-4">
-      {topMovies.map((movie, index) => (
+      {videos.map((movie) => (
         <Card
           key={movie.id}
           className="w-full aspect-[2/3] bg-card relative overflow-hidden border border-gray-800 cursor-pointer group hover:border-primary/50 transition-transform duration-300 ease-in-out hover:scale-105"
           onClick={() => handleMovieClick(movie.id)}
         >
           <CardContent className="p-0 w-full h-full relative">
+            <div className="absolute top-2 left-2 z-10">
+              <div className="bg-amber-500 text-black text-xs font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                Soon
+              </div>
+            </div>
             {movie.cover_image_path ? (
               <div className="w-full h-full bg-black relative">
                 <Image
@@ -56,7 +56,7 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition-colors duration-300 flex items-end">
               <div className="w-full p-3 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">
                 <p className="text-white text-sm font-medium text-center">{movie.title}</p>
-                <p className="text-primary text-xs text-center mt-0.5">Rank: {index + 1}</p>
+                <p className="text-amber-400 text-xs text-center mt-0.5">Upcoming</p>
               </div>
             </div>
           </CardContent>
@@ -67,13 +67,19 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
 
   const renderScrollView = () => (
     <div className="flex w-max space-x-4 p-4">
-      {topMovies.map((movie, index) => (
+      {videos.map((movie) => (
         <Card
           key={movie.id}
           className="w-[150px] h-[225px] flex-shrink-0 bg-card relative overflow-hidden border border-gray-800 glass cursor-pointer hover:border-primary/50 group"
           onClick={() => handleMovieClick(movie.id)}
         >
           <CardContent className="p-0 w-full h-full relative">
+            <div className="absolute top-2 left-2 z-10">
+              <div className="bg-amber-500 text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-lg flex items-center gap-1">
+                <Clock className="h-2.5 w-2.5" />
+                Soon
+              </div>
+            </div>
             {movie.cover_image_path ? (
               <div className="w-full h-full bg-black relative">
                 <Image
@@ -92,7 +98,7 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition-colors duration-300 flex items-end">
               <div className="w-full p-3 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">
                 <p className="text-white text-sm font-medium text-center">{movie.title}</p>
-                <p className="text-primary text-xs text-center mt-0.5">Rank: {index + 1}</p>
+                <p className="text-amber-400 text-xs text-center mt-0.5">Upcoming</p>
               </div>
             </div>
           </CardContent>
@@ -103,7 +109,7 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
 
   const renderListView = () => (
     <div className="space-y-4 p-4">
-      {topMovies.map((movie, index) => (
+      {videos.map((movie) => (
         <div
           key={movie.id}
           className="flex items-center space-x-4 p-2 bg-card rounded-md border border-gray-800 cursor-pointer hover:border-primary/50"
@@ -126,7 +132,7 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
           </div>
           <div>
             <p className="font-semibold text-primary futuristic-text">{movie.title}</p>
-            <p className="text-sm text-muted-foreground">Rank: {index + 1}</p>
+            <p className="text-sm text-amber-400">Upcoming</p>
           </div>
         </div>
       ))}
@@ -135,9 +141,9 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
 
   return (
     <section className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold tracking-wider uppercase bg-gradient-to-r from-[#ff0050] to-[#ff2975] text-transparent bg-clip-text futuristic-text">
-          Top 10 Movies
+      <div className="flex justify-between items-center gap-4">
+        <h2 className="text-2xl font-bold tracking-wider uppercase bg-gradient-to-r from-amber-400 to-orange-500 text-transparent bg-clip-text futuristic-text">
+          Upcoming Movies
         </h2>
         <Button
           onClick={() =>
@@ -159,21 +165,22 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
       </div>
 
       {loading ? (
-        <p className="text-muted-foreground text-center py-8">Loading top movies...</p>
-      ) : topMovies.length === 0 ? (
+        <p className="text-muted-foreground text-center py-8">Loading upcoming movies...</p>
+      ) : videos.length === 0 ? (
         <div className="text-center py-8 border border-gray-800 rounded-lg">
-          <p className="text-muted-foreground mb-2">No top movies yet.</p>
+          <p className="text-muted-foreground mb-2">No upcoming movies yet.</p>
           {canManageMedia ? (
             <p className="text-sm text-muted-foreground">
-              Curate titles in{" "}
+              In{" "}
               <Link href="/manage-media" className="text-primary underline">
                 Manage Media
-              </Link>{" "}
-              (Top Movies), or wait until videos have view counts — then this row defaults to the most
-              watched titles.
+              </Link>
+              , set a video&apos;s dashboard section to <strong>Upcoming Movies</strong>.
             </p>
           ) : (
-            <p className="text-sm text-muted-foreground">Check back soon for popular titles.</p>
+            <p className="text-sm text-muted-foreground">
+              New titles will appear here when they&apos;re announced.
+            </p>
           )}
         </div>
       ) : (
@@ -181,6 +188,7 @@ export function TopMovies({ shuffleMode }: TopMoviesProps) {
           {viewMode === "grid" && renderGridView()}
           {viewMode === "scroll" && renderScrollView()}
           {viewMode === "list" && renderListView()}
+          {viewMode === "scroll" && <ScrollBar orientation="horizontal" />}
         </ScrollArea>
       )}
     </section>
