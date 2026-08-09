@@ -19,9 +19,9 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/auth-provider'
 import { WatchPaywall } from '@/components/watch-paywall'
 import { WatchContentPanel } from '@/components/watch-content-panel'
-import { toast } from '@/components/ui/use-toast'
+import { toast } from '@/hooks/use-toast'
 import type { AccessResult } from '@/lib/content-access'
-import type { PurchaseType } from '@/lib/content-pricing'
+import { formatUsd, type PurchaseType } from '@/lib/content-pricing'
 import { useRecordPlay } from '@/hooks/use-record-play'
 
 const supabase = createClient(
@@ -49,11 +49,51 @@ export default function WatchPage() {
   const [parentMovieInfo, setParentMovieInfo] = useState<{
     producer?: string | null
     release_year?: number | null
+    trailer_cloudflare_stream_uid?: string | null
+    title?: string | null
   } | null>(null)
+  const [playbackMode, setPlaybackMode] = useState<'trailer' | 'full'>('trailer')
 
   const hasAccess = accessInfo?.hasAccess ?? false
   const { recordPlay } = useRecordPlay(params.id as string)
   const lastProgressRef = useRef(0)
+
+  const trailerUid =
+    videoData?.trailer_cloudflare_stream_uid ||
+    parentMovieInfo?.trailer_cloudflare_stream_uid ||
+    null
+
+  const showingTrailer = Boolean(trailerUid) && playbackMode === 'trailer'
+  const showingFullContent = playbackMode === 'full' && hasAccess
+  const showingPaywall = !showingTrailer && !showingFullContent && Boolean(accessInfo) && !hasAccess
+
+
+  useEffect(() => {
+    setPlaybackMode('trailer')
+  }, [params.id])
+
+  const handleWatchFull = () => {
+    if (hasAccess) {
+      setVideoData((prev: any) =>
+        prev?.cloudflare_stream_uid
+          ? {
+              ...prev,
+              cloudflare_iframe_url: getCloudflareStreamIframeUrl(prev.cloudflare_stream_uid),
+            }
+          : prev
+      )
+      setPlaybackMode('full')
+      return
+    }
+
+    if (!user) {
+      router.push(`/login?redirect=/watch/${params.id}`)
+      return
+    }
+
+    // No access — start purchase for the full title / episode
+    void handlePurchase(accessInfo?.isEpisode ? 'episode' : 'movie')
+  }
 
   const fetchAccess = async (videoId: string) => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -70,11 +110,14 @@ export default function WatchPage() {
     return response.json()
   }
 
-  const handlePurchase = async (purchaseType: PurchaseType) => {
-    const { data: { session } } = await supabase.auth.getSession()
+  const handlePurchase = async (purchaseType: PurchaseType, targetVideoId?: string) => {
+    const videoId = targetVideoId || (params.id as string)
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
 
     if (!session) {
-      router.push('/login')
+      router.push(`/login?redirect=/watch/${videoId}`)
       return
     }
 
@@ -88,7 +131,7 @@ export default function WatchPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          videoId: params.id,
+          videoId,
           purchaseType,
         }),
       })
@@ -99,23 +142,124 @@ export default function WatchPage() {
         throw new Error(result.error || 'Purchase failed')
       }
 
-      const access = await fetchAccess(params.id as string)
-      setAccessInfo(access)
+      if (result.alreadyOwned) {
+        if (videoId !== params.id) {
+          router.push(`/watch/${videoId}`)
+          setIsPurchasing(false)
+          return
+        }
 
-      toast({
-        title: 'Purchase successful',
-        description: 'You can now watch this title.',
-      })
+        const access = await fetchAccess(videoId)
+        setAccessInfo(access)
+        setVideoData((prev: any) =>
+          prev?.cloudflare_stream_uid
+            ? {
+                ...prev,
+                cloudflare_iframe_url: getCloudflareStreamIframeUrl(prev.cloudflare_stream_uid),
+              }
+            : prev
+        )
+        setPlaybackMode('full')
+        toast({
+          title: 'Already unlocked',
+          description: 'You already have access to this title.',
+        })
+        setIsPurchasing(false)
+        return
+      }
+
+      if (!result.url) {
+        throw new Error('No checkout URL returned')
+      }
+
+      window.location.href = result.url
     } catch (err: any) {
       toast({
         title: 'Purchase failed',
         description: err.message || 'Please try again.',
         variant: 'destructive',
       })
-    } finally {
       setIsPurchasing(false)
     }
   }
+
+  useEffect(() => {
+    const paramsSearch = new URLSearchParams(window.location.search)
+    const purchase = paramsSearch.get('purchase')
+    const sessionId = paramsSearch.get('session_id')
+    const videoId = params.id as string
+
+    if (!purchase || !videoId) return
+
+    const finish = async () => {
+      if (purchase === 'canceled') {
+        toast({
+          title: 'Purchase canceled',
+          description: 'No charge was made.',
+          variant: 'destructive',
+        })
+        window.history.replaceState({}, '', `/watch/${videoId}`)
+        return
+      }
+
+      if (purchase === 'success' && sessionId?.startsWith('cs_')) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (!session?.access_token) {
+          toast({
+            title: 'Payment received — log in to unlock',
+            description: 'Sign in with the same account you used to pay.',
+          })
+          router.push(`/login?redirect=/watch/${videoId}`)
+          return
+        }
+
+        try {
+          const response = await fetch('/api/stripe/sync-purchase', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ sessionId }),
+          })
+          const data = await response.json()
+          if (!response.ok) {
+            throw new Error(data.error || 'Could not unlock purchase')
+          }
+
+          const access = await fetchAccess(videoId)
+          setAccessInfo(access)
+          setVideoData((prev: any) =>
+            prev?.cloudflare_stream_uid
+              ? {
+                  ...prev,
+                  cloudflare_iframe_url: getCloudflareStreamIframeUrl(prev.cloudflare_stream_uid),
+                }
+              : prev
+          )
+          setPlaybackMode('full')
+
+          toast({
+            title: 'Purchase successful',
+            description: 'You can now watch this title.',
+          })
+        } catch (err: any) {
+          toast({
+            title: 'Payment received, unlock pending',
+            description: err.message || 'Refresh in a moment if playback is still locked.',
+            variant: 'destructive',
+          })
+        }
+
+        window.history.replaceState({}, '', `/watch/${videoId}`)
+      }
+    }
+
+    void finish()
+  }, [params.id, router])
 
   useEffect(() => {
     const loadVideo = async () => {
@@ -146,12 +290,20 @@ export default function WatchPage() {
 
         setVideoData(data)
 
+        let parentInfo: {
+          producer?: string | null
+          release_year?: number | null
+          trailer_cloudflare_stream_uid?: string | null
+          title?: string | null
+        } | null = null
+
         if (data.parent_id) {
           const { data: parent } = await supabase
             .from('video_assets')
-            .select('producer, release_year')
+            .select('producer, release_year, trailer_cloudflare_stream_uid, title')
             .eq('id', data.parent_id)
             .maybeSingle()
+          parentInfo = parent
           setParentMovieInfo(parent)
         } else {
           setParentMovieInfo(null)
@@ -193,13 +345,31 @@ export default function WatchPage() {
         const access = await fetchAccess(params.id as string)
         setAccessInfo(access)
 
+        const hasTrailer = Boolean(
+          data.trailer_cloudflare_stream_uid || parentInfo?.trailer_cloudflare_stream_uid
+        )
+
+        if (hasTrailer && !(access.hasAccess && data.content_type === 'episode')) {
+          setPlaybackMode('trailer')
+        } else if (access.hasAccess) {
+          setPlaybackMode('full')
+        } else {
+          setLoading(false)
+          return
+        }
+
         if (!access.hasAccess) {
+          // Trailer-only preview until they unlock
           setLoading(false)
           return
         }
 
         let manifestUrl = data.manifest_url
         if (!manifestUrl && !data.cloudflare_stream_uid) {
+          if (hasTrailer) {
+            setLoading(false)
+            return
+          }
           throw new Error('No manifest URL found')
         }
 
@@ -522,11 +692,56 @@ export default function WatchPage() {
           </CardHeader>
           <CardContent>
             <div className="relative bg-black rounded-lg overflow-hidden">
-              {!hasAccess && accessInfo ? (
+              {showingTrailer ? (
+                <div className="w-full space-y-3">
+                  <div className="aspect-video w-full">
+                    <iframe
+                      src={getCloudflareStreamIframeUrl(trailerUid!)}
+                      className="w-full h-full border-0"
+                      allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+                      allowFullScreen
+                      title={`${videoData?.title || 'Video'} trailer`}
+                      onLoad={() => setLoading(false)}
+                    />
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-primary font-semibold">
+                        Trailer
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Preview only — unlock to watch the full title
+                        {accessInfo?.isEpisode ? ' or this episode' : ''}.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button onClick={handleWatchFull} disabled={isPurchasing}>
+                        <Play className="h-4 w-4 mr-2" />
+                        {hasAccess
+                          ? accessInfo?.isEpisode
+                            ? 'Watch episode'
+                            : 'Watch full movie'
+                          : accessInfo?.isEpisode
+                            ? `Buy episode — ${formatUsd(accessInfo.pricing.episode)}`
+                            : `Watch full movie — ${formatUsd(accessInfo?.pricing.movie ?? 4.25)}`}
+                      </Button>
+                      {!hasAccess && accessInfo?.isEpisode && (
+                        <Button
+                          variant="outline"
+                          onClick={() => handlePurchase('movie')}
+                          disabled={isPurchasing}
+                        >
+                          Buy full series — {formatUsd(accessInfo.pricing.movie)}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : showingPaywall && accessInfo ? (
                 <WatchPaywall
                   title={videoData?.title || 'Video'}
                   isEpisode={accessInfo.isEpisode}
-                  parentTitle={accessInfo.parentTitle}
+                  parentTitle={accessInfo.parentTitle || parentMovieInfo?.title}
                   moviePrice={accessInfo.pricing.movie}
                   episodePrice={accessInfo.pricing.episode}
                   subscriptionTier={accessInfo.subscriptionTier}
@@ -535,7 +750,33 @@ export default function WatchPage() {
                   onPurchaseMovie={() => handlePurchase('movie')}
                   onPurchaseEpisode={() => handlePurchase('episode')}
                 />
-              ) : videoData?.cloudflare_stream_uid ? (
+              ) : showingFullContent && videoData?.cloudflare_stream_uid ? (
+                <div className="aspect-video w-full relative">
+                  <iframe
+                    src={videoData.cloudflare_iframe_url || getCloudflareStreamIframeUrl(videoData.cloudflare_stream_uid)}
+                    className="w-full h-full border-0"
+                    allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture"
+                    allowFullScreen
+                    title={videoData.title}
+                    onLoad={() => {
+                      setLoading(false)
+                      recordPlay('start')
+                    }}
+                  />
+                  {trailerUid && (
+                    <div className="absolute top-3 right-3 z-10">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="bg-black/70 hover:bg-black/90"
+                        onClick={() => setPlaybackMode('trailer')}
+                      >
+                        Back to trailer
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : videoData?.cloudflare_stream_uid && hasAccess ? (
                 <div className="aspect-video w-full">
                   <iframe
                     src={videoData.cloudflare_iframe_url || getCloudflareStreamIframeUrl(videoData.cloudflare_stream_uid)}

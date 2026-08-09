@@ -20,7 +20,7 @@ type WatchContentPanelProps = {
   accessInfo: AccessResult | null
   isLoggedIn: boolean
   isPurchasing: boolean
-  onPurchase: (type: PurchaseType) => void
+  onPurchase: (type: PurchaseType, videoId?: string) => void
 }
 
 function SubscriptionBanner({ subscriptionTier }: { subscriptionTier: string }) {
@@ -89,7 +89,20 @@ export function WatchContentPanel({
   }, [seriesId])
 
   const handleSelectEpisode = (episode: EpisodeAccess) => {
-    router.push(`/watch/${episode.id}`)
+    if (episode.hasAccess) {
+      router.push(`/watch/${episode.id}`)
+      return
+    }
+
+    if (!isLoggedIn) {
+      router.push(`/login?redirect=/watch/${episode.id}`)
+      return
+    }
+
+    if (isPurchasing) return
+
+    // Locked episode — charge for this episode before play
+    onPurchase('episode', episode.id)
   }
 
   if (loading) {
@@ -161,6 +174,8 @@ export function WatchContentPanel({
                 episodes={seriesData.episodes}
                 selectedEpisodeId={videoId}
                 onSelectEpisode={handleSelectEpisode}
+                episodePrice={seriesData.pricing.episode}
+                hasFullAccess={seriesData.hasFullAccess}
               />
             )}
           </div>

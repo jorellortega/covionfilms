@@ -132,6 +132,8 @@ export function SeriesEpisodesPanel({
               episodes={seriesData.episodes}
               selectedEpisodeId={currentEpisodeId}
               onSelectEpisode={handleSelectEpisode}
+              episodePrice={seriesData.pricing.episode}
+              hasFullAccess={seriesData.hasFullAccess}
             />
           )}
         </div>

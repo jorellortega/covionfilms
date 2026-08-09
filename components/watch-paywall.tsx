@@ -101,7 +101,7 @@ export function WatchPaywall({
               <Link href="/signup" className="text-primary hover:underline">
                 create an account
               </Link>{' '}
-              to purchase or subscribe.
+              first — then you&apos;ll be charged via Stripe to unlock.
             </p>
           )}
         </CardContent>

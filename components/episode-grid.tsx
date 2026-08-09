@@ -1,9 +1,11 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
-import { Lock } from 'lucide-react'
+import { Film, Lock } from 'lucide-react'
 import type { EpisodeAccess } from '@/lib/content-access'
+import { EPISODE_PURCHASE_PRICE, formatUsd } from '@/lib/content-pricing'
 import { cn } from '@/lib/utils'
 
 const EPISODES_PER_PAGE = 25
@@ -12,9 +14,59 @@ type EpisodeGridProps = {
   episodes: EpisodeAccess[]
   selectedEpisodeId?: string
   onSelectEpisode: (episode: EpisodeAccess) => void
+  episodePrice?: number
+  hasFullAccess?: boolean
 }
 
-export function EpisodeGrid({ episodes, selectedEpisodeId, onSelectEpisode }: EpisodeGridProps) {
+function getEpisodePricingLabel(
+  episode: EpisodeAccess,
+  episodePrice: number,
+  hasFullAccess: boolean
+): { badge: string; detail: string; unlocked: boolean; showLock: boolean } {
+  if (episode.is_free) {
+    return {
+      badge: 'Free',
+      detail: 'Free to watch',
+      unlocked: true,
+      showLock: false,
+    }
+  }
+
+  const unlocked = episode.hasAccess || hasFullAccess
+
+  if (unlocked && episode.reason === 'purchase') {
+    return {
+      badge: 'Owned',
+      detail: 'Purchased',
+      unlocked: true,
+      showLock: false,
+    }
+  }
+
+  if (unlocked) {
+    return {
+      badge: formatUsd(episodePrice),
+      detail: 'Included with your access',
+      unlocked: true,
+      showLock: false,
+    }
+  }
+
+  return {
+    badge: formatUsd(episodePrice),
+    detail: `Buy for ${formatUsd(episodePrice)}`,
+    unlocked: false,
+    showLock: true,
+  }
+}
+
+export function EpisodeGrid({
+  episodes,
+  selectedEpisodeId,
+  onSelectEpisode,
+  episodePrice = EPISODE_PURCHASE_PRICE,
+  hasFullAccess = false,
+}: EpisodeGridProps) {
   const [activeRange, setActiveRange] = useState(0)
 
   const ranges = useMemo(() => {
@@ -66,10 +118,11 @@ export function EpisodeGrid({ episodes, selectedEpisodeId, onSelectEpisode }: Ep
         </div>
       )}
 
-      <div className="grid grid-cols-5 gap-2 sm:grid-cols-6 md:grid-cols-8">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {visibleEpisodes.map((episode) => {
           const isSelected = episode.id === selectedEpisodeId
-          const isLocked = !episode.hasAccess
+          const thumb = episode.cover_image_path || null
+          const pricing = getEpisodePricingLabel(episode, episodePrice, hasFullAccess)
 
           return (
             <button
@@ -77,16 +130,74 @@ export function EpisodeGrid({ episodes, selectedEpisodeId, onSelectEpisode }: Ep
               type="button"
               onClick={() => onSelectEpisode(episode)}
               className={cn(
-                'relative aspect-square rounded-md text-sm font-medium transition-colors',
+                'group relative overflow-hidden rounded-md text-left transition-colors',
                 isSelected
-                  ? 'bg-red-900/80 text-white ring-2 ring-red-500'
-                  : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'
+                  ? 'ring-2 ring-red-500'
+                  : 'ring-1 ring-transparent hover:ring-zinc-600'
               )}
             >
-              <span>{episode.episode_number || '?'}</span>
-              {isLocked && (
-                <Lock className="absolute top-1 right-1 h-3 w-3 text-zinc-400" />
-              )}
+              <div className="relative aspect-video bg-zinc-800">
+                {thumb ? (
+                  <Image
+                    src={thumb}
+                    alt={episode.title}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement
+                      target.src = '/placeholder.svg'
+                    }}
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <Film className="h-6 w-6 text-zinc-500" />
+                  </div>
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                {pricing.showLock && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/35">
+                    <Lock className="h-12 w-12 text-white drop-shadow-lg sm:h-14 sm:w-14" strokeWidth={2.25} />
+                  </div>
+                )}
+                <span className="absolute bottom-1.5 left-2 text-xs font-semibold text-white">
+                  {episode.episode_number || '?'}
+                </span>
+                {episode.is_free ? (
+                  <span className="absolute top-2 right-2 inline-flex items-center rounded-md bg-green-600 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white shadow-md">
+                    Free
+                  </span>
+                ) : (
+                  <span
+                    className={cn(
+                      'absolute top-2 right-2 inline-flex items-center rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wide shadow-md',
+                      pricing.unlocked
+                        ? 'bg-emerald-800 text-emerald-100'
+                        : 'bg-black/85 text-amber-300'
+                    )}
+                  >
+                    {pricing.badge}
+                  </span>
+                )}
+              </div>
+              <div className="space-y-0.5 px-1.5 py-1.5">
+                <p
+                  className={cn(
+                    'truncate text-xs',
+                    isSelected ? 'text-white' : 'text-zinc-300 group-hover:text-white'
+                  )}
+                >
+                  {episode.title}
+                </p>
+                <p
+                  className={cn(
+                    'text-[11px] font-medium',
+                    pricing.unlocked ? 'text-green-400' : 'text-amber-400'
+                  )}
+                >
+                  {pricing.detail}
+                </p>
+              </div>
             </button>
           )
         })}

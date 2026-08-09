@@ -41,7 +41,13 @@ export function MobileMenu() {
                 <div className="px-4 py-2 border-b border-gray-600 mb-2">
                   <div className="text-sm font-medium text-white">{user.name}</div>
                   <div className="text-xs text-gray-400 capitalize">{user.role}</div>
-                  <div className="text-xs text-primary">{user.subscription} Plan</div>
+                  <Link
+                    href="/manage-subscription"
+                    className="text-xs text-primary hover:underline capitalize"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    {user.subscription} Plan — Manage
+                  </Link>
                 </div>
                 <Link
                   href="/dashboard"
@@ -102,8 +108,29 @@ export function MobileMenu() {
                   >
                     Streaming Analytics
                   </Link>
+                  <Link
+                    href="/admin/purchases"
+                    className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    Purchase Tracker
+                  </Link>
                   </>
                 ) : null}
+                <Link
+                  href="/purchases"
+                  className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"
+                  onClick={() => setIsOpen(false)}
+                >
+                  My Purchases
+                </Link>
+                <Link
+                  href="/manage-subscription"
+                  className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"
+                  onClick={() => setIsOpen(false)}
+                >
+                  Manage Subscription
+                </Link>
                 <Link
                   href="/subscribe"
                   className="block px-4 py-2 text-sm text-foreground hover:bg-primary/20 transition-colors"

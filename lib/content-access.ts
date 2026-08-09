@@ -1,4 +1,5 @@
 import { supabaseServer } from '@/lib/supabaseServer'
+import { getCoverImageUrl } from '@/lib/cover-image'
 import {
   EPISODE_PURCHASE_PRICE,
   MOVIE_PURCHASE_PRICE,
@@ -34,6 +35,7 @@ export type EpisodeAccess = {
   hasAccess: boolean
   reason: AccessResult['reason']
   status?: string
+  cover_image_path?: string | null
 }
 
 export type SeriesAccessResult = {
@@ -151,7 +153,7 @@ export async function getSeriesAccess(
 
   const { data: episodes } = await supabaseServer
     .from('video_assets')
-    .select('id, title, episode_number, is_free, status, content_type, parent_id')
+    .select('id, title, episode_number, is_free, status, content_type, parent_id, cover_image_path')
     .eq('parent_id', seriesId)
     .order('episode_number', { ascending: true })
 
@@ -176,6 +178,7 @@ export async function getSeriesAccess(
       hasAccess: access.hasAccess,
       reason: userRole && ADMIN_ROLES.has(userRole) ? 'admin' : access.reason,
       status: episode.status,
+      cover_image_path: getCoverImageUrl(episode.cover_image_path),
     })
   }
 

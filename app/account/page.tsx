@@ -35,16 +35,21 @@ export default function AccountPage() {
 
   useEffect(() => {
     const fetchProfile = async () => {
-      // Simulating an API call to fetch user profile
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      await new Promise((resolve) => setTimeout(resolve, 300))
 
-      // Mock data - in a real app, this would come from your API
       const mockProfile: UserProfile = {
         name: user?.name || "John Doe",
         email: user?.email || "john.doe@example.com",
         status: "active",
         role: user?.role === "admin" ? "admin" : user?.role === "management" ? "management" : user?.role === "creator" ? "creator" : "user",
-        subscription: user?.subscription === "premium" ? "premium" : user?.subscription === "family" ? "family" : "free",
+        subscription:
+          user?.subscription === "premium"
+            ? "premium"
+            : user?.subscription === "family"
+              ? "family"
+              : user?.subscription === "standard"
+                ? "standard"
+                : "free",
         subscriptionExpiry: user?.subscriptionExpiry,
         avatarUrl: "/placeholder.svg",
       }
@@ -55,6 +60,10 @@ export default function AccountPage() {
 
     fetchProfile()
   }, [user])
+
+  const handleManageSubscription = async () => {
+    router.push("/manage-subscription")
+  }
 
   if (loading) {
     return (
@@ -138,11 +147,13 @@ export default function AccountPage() {
                 <LogOut className="h-4 w-4 mr-2" />
                 Sign Out
               </Button>
-              <Link href="/subscribe">
-                <Button variant="default" className="bg-gradient-to-r from-primary to-[#8e2de2] text-white">
-                  {profile.subscription === "free" ? "Upgrade Account" : "Manage Subscription"}
-                </Button>
-              </Link>
+              <Button
+                variant="default"
+                className="bg-gradient-to-r from-primary to-[#8e2de2] text-white"
+                onClick={handleManageSubscription}
+              >
+                {profile.subscription === "free" ? "Upgrade Account" : "Manage Subscription"}
+              </Button>
             </div>
           </div>
         </CardContent>

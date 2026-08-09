@@ -1,77 +1,173 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { toast } from "@/components/ui/use-toast"
-import { EPISODE_PURCHASE_PRICE, MOVIE_PURCHASE_PRICE, formatUsd } from "@/lib/content-pricing"
+import { toast } from "@/hooks/use-toast"
+import { useAuth } from "@/components/auth-provider"
+import { supabase } from "@/lib/supabaseClient"
+import {
+  ANNUAL_DISCOUNT,
+  EPISODE_PURCHASE_PRICE,
+  MOVIE_PURCHASE_PRICE,
+  SUBSCRIPTION_PLANS,
+  formatUsd,
+  getAnnualPrice,
+  type BillingPeriod,
+} from "@/lib/content-pricing"
 import { cn } from "@/lib/utils"
-
-const ANNUAL_DISCOUNT = 0.1
-
-const subscriptionPlans = [
-  {
-    name: "Free",
-    monthlyPrice: 0,
-    description: "Limited access to free content",
-    features: ["Access to free movies", "Ad-supported viewing", "Slower streaming speed"],
-  },
-  {
-    name: "Movies",
-    monthlyPrice: 7.5,
-    description: "Full access to all movies",
-    features: ["Unlimited access to all movies", "Ad-free viewing", "Full streaming speed"],
-  },
-  {
-    name: "Family",
-    monthlyPrice: 12,
-    description: "Access for the whole family",
-    features: ["Up to 5 user profiles", "Parental controls", "Shared watchlist", "Full access to all content"],
-  },
-]
 
 function formatPrice(amount: number) {
   return amount % 1 === 0 ? `$${amount.toFixed(0)}` : `$${amount.toFixed(2)}`
 }
 
-function getAnnualPrice(monthlyPrice: number) {
-  return monthlyPrice * 12 * (1 - ANNUAL_DISCOUNT)
-}
-
-function getDisplayLabel(name: string) {
-  if (name === "Free") return "Free"
-  if (name === "Movies") return "Standard"
-  if (name === "Family") return "Family"
-  return name
-}
-
 export default function SubscribePage() {
-  const [selectedPlan, setSelectedPlan] = useState("")
-  const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("monthly")
+  const { user, isLoading: authLoading } = useAuth()
+  const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>("monthly")
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
 
-  const handleSubscribe = (planName?: string) => {
-    const plan = planName || selectedPlan
-    if (plan) {
-      if (planName) setSelectedPlan(planName)
-      const label = getDisplayLabel(plan)
-      const period = billingPeriod === "annual" ? "annual" : "monthly"
-      toast({
-        title: "Subscription Successful",
-        description: `You have subscribed to the ${label} plan (${period}).`,
+  const isLoggedIn = Boolean(user)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const success = params.get("success") === "1"
+    const canceled = params.get("canceled") === "1"
+    const sessionId = params.get("session_id")
+    const plan = params.get("plan") || "your"
+
+    if (!success && !canceled) return
+
+    const finish = async () => {
+      if (canceled) {
+        setStatusMessage("Checkout canceled. No charge was made.")
+        window.history.replaceState({}, "", "/subscribe")
+        return
+      }
+
+      if (sessionId?.startsWith("cs_")) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (!session?.access_token) {
+          setStatusMessage("Payment received. Log in to activate your plan.")
+          window.history.replaceState({}, "", "/subscribe")
+          return
+        }
+
+        try {
+          const response = await fetch("/api/stripe/sync-checkout", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ sessionId }),
+          })
+          const data = await response.json()
+          if (!response.ok) {
+            throw new Error(data.error || "Could not activate subscription")
+          }
+          setStatusMessage(`Subscription active — you're on the ${data.tier || plan} plan.`)
+          toast({
+            title: "Subscription active",
+            description: `You're on the ${data.tier || plan} plan.`,
+          })
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Activation failed"
+          setStatusMessage(message)
+        }
+      } else {
+        setStatusMessage(`Thanks! Your ${plan} plan is activating.`)
+      }
+
+      window.history.replaceState({}, "", "/subscribe")
+    }
+
+    void finish()
+  }, [])
+
+  const startCheckout = async (planId: string) => {
+    if (planId === "free") {
+      setStatusMessage("You're on the Free plan. Upgrade anytime for full access.")
+      return
+    }
+
+    setLoadingPlan(planId)
+    setStatusMessage(null)
+
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        window.location.href = "/login?redirect=/subscribe"
+        return
+      }
+
+      const response = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ planId, billingPeriod }),
       })
-    } else {
-      toast({
-        title: "Subscription Failed",
-        description: "Please select a plan before subscribing.",
-        variant: "destructive",
-      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not start checkout")
+      }
+
+      if (!data.url) {
+        throw new Error("No checkout URL returned")
+      }
+
+      window.location.href = data.url
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Checkout failed"
+      setStatusMessage(message)
+      setLoadingPlan(null)
     }
   }
 
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-2xl md:text-3xl font-bold mb-8 text-center">Choose Your Subscription</h1>
+      <p className="text-center text-xs text-muted-foreground mb-4" data-build="SUBSCRIBE_BUILD_MARKER">Updated subscribe flow — use Log in / Create account first</p>
+
+      {!isLoggedIn && (
+        <div className="max-w-xl mx-auto mb-8 rounded-lg border-2 border-red-500 bg-red-500/10 p-5 text-center space-y-4">
+          <p className="text-lg font-bold text-white">Log in or create an account to subscribe</p>
+          <p className="text-sm text-muted-foreground">
+            Paid plans must be linked to your COVION account.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3">
+            <a
+              href="/login?redirect=/subscribe"
+              className="inline-flex items-center justify-center rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-white hover:opacity-90"
+            >
+              Log in
+            </a>
+            <a
+              href="/signup?redirect=/subscribe"
+              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-5 py-2.5 text-sm font-medium hover:bg-accent"
+            >
+              Create account
+            </a>
+          </div>
+        </div>
+      )}
+
+      {statusMessage && (
+        <div className="max-w-xl mx-auto mb-6 rounded-lg border border-primary/40 bg-primary/10 p-4 text-center text-sm">
+          {statusMessage}
+        </div>
+      )}
 
       <div className="flex justify-center mb-8">
         <div className="inline-flex rounded-lg border border-gray-700 p-1 bg-card">
@@ -100,12 +196,8 @@ export default function SubscribePage() {
         </div>
       </div>
 
-      <RadioGroup
-        value={selectedPlan}
-        onValueChange={setSelectedPlan}
-        className="grid gap-8 md:grid-cols-2 lg:grid-cols-3"
-      >
-        {subscriptionPlans.map((plan) => {
+      <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+        {SUBSCRIPTION_PLANS.map((plan) => {
           const isFree = plan.monthlyPrice === 0
           const annualPrice = getAnnualPrice(plan.monthlyPrice)
           const priceLabel = isFree
@@ -113,28 +205,19 @@ export default function SubscribePage() {
             : billingPeriod === "monthly"
               ? `${formatPrice(plan.monthlyPrice)}/month`
               : `${formatPrice(annualPrice)}/year`
-          const isSelected = selectedPlan === plan.name
+          const isBusy = loadingPlan === plan.id
+          const authHref = isFree
+            ? "/signup?redirect=/subscribe"
+            : "/login?redirect=/subscribe"
 
           return (
             <Card
-              key={plan.name}
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelectedPlan(plan.name)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault()
-                  setSelectedPlan(plan.name)
-                }
-              }}
-              className={cn(
-                "relative cursor-pointer transition-all hover:border-primary/60 hover:shadow-lg",
-                isSelected && "border-primary ring-2 ring-primary/30"
-              )}
+              key={plan.id}
+              className={cn("relative transition-all hover:border-primary/60 hover:shadow-lg")}
             >
               <CardHeader>
                 <CardTitle className="text-lg font-bold bg-gradient-to-r from-red-600 to-white text-transparent bg-clip-text p-2">
-                  {getDisplayLabel(plan.name)}
+                  {plan.name}
                 </CardTitle>
                 <CardDescription>{priceLabel}</CardDescription>
                 {!isFree && billingPeriod === "annual" && (
@@ -151,27 +234,29 @@ export default function SubscribePage() {
                   ))}
                 </ul>
               </CardContent>
-              <CardFooter className="flex flex-col gap-3">
-                <Button
-                  className="w-full"
-                  variant={isSelected ? "default" : "outline"}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleSubscribe(plan.name)
-                  }}
-                >
-                  {isFree ? "Get Started" : "Subscribe"}
-                </Button>
-                <RadioGroupItem
-                  value={plan.name}
-                  id={plan.name}
-                  className="absolute top-4 right-4 pointer-events-none"
-                />
+              <CardFooter>
+                {/* Plain <a> when logged out — works even if React hydration fails */}
+                {!isLoggedIn || authLoading ? (
+                  <a
+                    href={authHref}
+                    className="inline-flex w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                  >
+                    {isFree ? "Create account" : "Log in to subscribe"}
+                  </a>
+                ) : (
+                  <Button
+                    className="w-full"
+                    disabled={Boolean(loadingPlan)}
+                    onClick={() => void startCheckout(plan.id)}
+                  >
+                    {isBusy ? "Redirecting to Stripe…" : isFree ? "Get Started" : "Subscribe"}
+                  </Button>
+                )}
               </CardFooter>
             </Card>
           )
         })}
-      </RadioGroup>
+      </div>
 
       <Card className="mt-10 max-w-3xl mx-auto border-gray-800">
         <CardHeader>
@@ -205,9 +290,6 @@ export default function SubscribePage() {
               watch all paid movies and episodes at no extra cost — no per-title charges.
             </p>
           </div>
-          <p className="text-xs text-muted-foreground text-center">
-            Free-tier members and guests can browse free content or purchase titles individually on any watch page.
-          </p>
         </CardContent>
       </Card>
     </div>

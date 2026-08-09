@@ -17,7 +17,9 @@ interface MovieTrailersProps {
 const CONTROLS_HIDE_DELAY_MS = 3000
 
 export function MovieTrailers({ shuffleMode }: MovieTrailersProps) {
-  const { videos, loading } = useDashboardVideos("new_releases", 8)
+  const { videos: allVideos, loading } = useDashboardVideos("new_releases", 8)
+  // Dashboard hero plays trailers only — never the full movie stream
+  const videos = allVideos.filter((video) => Boolean(video.trailer_cloudflare_stream_uid))
   const [activeIndex, setActiveIndex] = useState(0)
   const [controlsVisible, setControlsVisible] = useState(true)
   const hideControlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -88,15 +90,19 @@ export function MovieTrailers({ shuffleMode }: MovieTrailersProps) {
         <div className="relative aspect-video w-full max-w-4xl mx-auto overflow-hidden rounded-lg border border-gray-800 flex flex-col items-center justify-center bg-card gap-3 p-6 text-center">
           <Film className="h-12 w-12 text-muted-foreground" />
           <p className="text-muted-foreground">
-            No video in the main player yet. Go to <Link href="/manage-media" className="text-primary underline">Manage Media</Link> and set a video&apos;s dashboard section to <strong>New Releases</strong>.
+            No trailers in the main player yet. In{" "}
+            <Link href="/manage-media" className="text-primary underline">
+              Manage Media
+            </Link>
+            , set a video&apos;s dashboard section to <strong>New Releases</strong> and add a{" "}
+            <strong>Trailer Cloudflare Video ID</strong>.
           </p>
         </div>
       </section>
     )
   }
 
-  const playbackUid =
-    activeVideo.trailer_cloudflare_stream_uid || activeVideo.cloudflare_stream_uid
+  const playbackUid = activeVideo.trailer_cloudflare_stream_uid
 
   const iframeSrc = playbackUid
     ? getCloudflareStreamIframeUrl(playbackUid)

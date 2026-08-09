@@ -2,8 +2,8 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { Suspense, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useAuth } from "@/components/auth-provider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,15 +13,31 @@ import { toast } from "@/components/ui/use-toast"
 import Link from "next/link"
 
 export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto flex items-center justify-center min-h-screen px-4">
+          <p className="text-muted-foreground">Loading…</p>
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const { login } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams?.get("redirect") || "/"
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!email || !password) {
       toast({
         title: "Missing Information",
@@ -39,7 +55,7 @@ export default function LoginPage() {
         title: "Login Successful! 🎉",
         description: "Welcome back to COVION!",
       })
-      router.push("/")
+      router.push(redirectTo.startsWith("/") ? redirectTo : "/")
     } catch (error: any) {
       toast({
         title: "Login Failed",
@@ -55,9 +71,7 @@ export default function LoginPage() {
     <div className="container mx-auto flex items-center justify-center min-h-screen px-4">
       <Card className="w-full max-w-md overflow-hidden">
         <CardHeader className="bg-gradient-to-r from-primary to-[#8e2de2] text-white">
-          <CardTitle className="text-2xl font-bold">
-            Login to COVION
-          </CardTitle>
+          <CardTitle className="text-2xl font-bold">Login to COVION</CardTitle>
           <CardDescription className="text-gray-200">
             Enter your credentials to access your account
           </CardDescription>
@@ -99,7 +113,7 @@ export default function LoginPage() {
         </CardContent>
         <CardFooter className="flex justify-center bg-card glass">
           <p className="text-sm text-muted-foreground">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link href="/signup" className="text-primary hover:underline">
               Sign up
             </Link>
@@ -109,4 +123,3 @@ export default function LoginPage() {
     </div>
   )
 }
-

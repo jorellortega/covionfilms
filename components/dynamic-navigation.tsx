@@ -68,8 +68,14 @@ export function DynamicNavigation() {
             <Link href="/admin/streaming-analytics" className="text-foreground hover:text-primary transition-colors">
               Streaming Analytics
             </Link>
+            <Link href="/admin/purchases" className="text-foreground hover:text-primary transition-colors">
+              Purchase Tracker
+            </Link>
           </>
         ) : null}
+        <Link href="/purchases" className="text-foreground hover:text-primary transition-colors">
+          My Purchases
+        </Link>
         <Link href="/subscribe" className="text-foreground hover:text-primary transition-colors">
           Subscribe
         </Link>
@@ -93,9 +99,13 @@ export function DynamicNavigation() {
           <span className="text-sm text-gray-300">
             {user.name}
           </span>
-          <span className="text-xs px-2 py-1 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white">
+          <Link
+            href="/manage-subscription"
+            className="text-xs px-2 py-1 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:opacity-90 capitalize"
+            title="Manage subscription"
+          >
             {user.subscription}
-          </span>
+          </Link>
           <Button
             variant="ghost"
             size="sm"

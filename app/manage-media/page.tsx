@@ -16,6 +16,14 @@ import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import Link from "next/link"
 import { EPISODE_PURCHASE_PRICE, MOVIE_PURCHASE_PRICE, formatUsd } from "@/lib/content-pricing"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface Video {
   id: string
@@ -90,6 +98,7 @@ export default function ManageMediaPage() {
   const [coverFile, setCoverFile] = useState<File | null>(null)
   const [coverPreview, setCoverPreview] = useState<string | null>(null)
   const [uploadingCover, setUploadingCover] = useState(false)
+  const [uploadingEpisodeThumbId, setUploadingEpisodeThumbId] = useState<string | null>(null)
 
   // Fetch user's videos from database
   useEffect(() => {
@@ -136,6 +145,10 @@ export default function ManageMediaPage() {
             rating_count: 0,
             cover_image_path: v.cover_image_path || undefined,
             backup_url: (v as { backup_url?: string }).backup_url || undefined,
+            cloudflare_stream_uid: v.cloudflare_stream_uid || undefined,
+            trailer_cloudflare_stream_uid: v.trailer_cloudflare_stream_uid || undefined,
+            producer: v.producer || undefined,
+            release_year: v.release_year ?? undefined,
           }))
       ]
 
@@ -209,14 +222,33 @@ export default function ManageMediaPage() {
 
     try {
       const nextValue = !video.is_free
-      const { error } = await supabase
-        .from('video_assets')
-        .update({ is_free: nextValue })
-        .eq('id', video.id)
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
 
-      if (error) throw error
+      if (!session?.access_token) {
+        throw new Error('You must be signed in to update pricing.')
+      }
 
-      setVideos(videos.map((v) => (v.id === video.id ? { ...v, is_free: nextValue } : v)))
+      const response = await fetch('/api/media/update', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          videoId: video.id,
+          updates: { is_free: nextValue },
+        }),
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update pricing')
+      }
+
+      setVideos((prev) =>
+        prev.map((v) => (v.id === video.id ? { ...v, is_free: nextValue } : v))
+      )
 
       toast({
         title: nextValue ? "Marked as free" : "Marked as paid",
@@ -230,6 +262,11 @@ export default function ManageMediaPage() {
       })
     }
   }
+
+  const managingSeries = managingSeriesId
+    ? videos.find((v) => v.id === managingSeriesId) || null
+    : null
+
 
   const getPricingLabel = (video: Video) => {
     if (video.is_free) return 'Free'
@@ -311,6 +348,97 @@ export default function ManageMediaPage() {
     }
   }
 
+  const handleEpisodeThumbnailUpload = async (
+    episode: Video,
+    file: File
+  ) => {
+    if (episode.source !== 'video_assets') {
+      toast({
+        title: 'Not supported',
+        description: 'Thumbnail upload only applies to video_assets entries.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    try {
+      setUploadingEpisodeThumbId(episode.id)
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session?.access_token) {
+        throw new Error('You must be signed in to upload a thumbnail.')
+      }
+
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('videoId', episode.id)
+
+      const uploadResponse = await fetch('/api/media/cover', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      })
+
+      const uploadResult = (await uploadResponse.json()) as {
+        coverImagePath?: string
+        error?: string
+      }
+
+      if (!uploadResponse.ok) {
+        throw new Error(uploadResult.error || 'Thumbnail upload failed')
+      }
+
+      const coverImagePath = uploadResult.coverImagePath
+      if (!coverImagePath) {
+        throw new Error('Thumbnail upload did not return a path')
+      }
+
+      const response = await fetch('/api/media/update', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          videoId: episode.id,
+          updates: { cover_image_path: coverImagePath },
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to save thumbnail')
+      }
+
+      setVideos((prev) =>
+        prev.map((v) =>
+          v.id === episode.id
+            ? { ...v, cover_image_path: coverImagePath }
+            : v
+        )
+      )
+
+      toast({
+        title: 'Thumbnail updated',
+        description: `Custom thumbnail saved for "${episode.title}".`,
+      })
+    } catch (error: unknown) {
+      toast({
+        title: 'Error',
+        description:
+          error instanceof Error ? error.message : 'Failed to upload thumbnail',
+        variant: 'destructive',
+      })
+    } finally {
+      setUploadingEpisodeThumbId(null)
+    }
+  }
+
   const handleSaveEdit = async () => {
     if (!editingVideo) return
 
@@ -373,6 +501,14 @@ export default function ManageMediaPage() {
           ? parseInt(editForm.episode_number, 10)
           : null
         updates.is_free = editForm.is_free
+        updates.cloudflare_stream_uid = editForm.cloudflare_stream_uid.trim() || null
+        updates.trailer_cloudflare_stream_uid = editForm.trailer_cloudflare_stream_uid.trim() || null
+        updates.producer = editForm.producer.trim() || null
+        const parsedYear = editForm.release_year.trim() ? parseInt(editForm.release_year, 10) : NaN
+        updates.release_year = Number.isFinite(parsedYear) ? parsedYear : null
+        if (editForm.manifest_url.trim()) {
+          updates.manifest_url = editForm.manifest_url.trim()
+        }
       }
 
       // Update cover_image_path if new cover was uploaded
@@ -385,28 +521,70 @@ export default function ManageMediaPage() {
         updates.file_path = editForm.manifest_url
       }
 
+      let savedVideo: Record<string, unknown> | null = null
+
       if (table === 'video_assets') {
-        updates.cloudflare_stream_uid = editForm.cloudflare_stream_uid.trim() || null
-        updates.trailer_cloudflare_stream_uid = editForm.trailer_cloudflare_stream_uid.trim() || null
-        updates.producer = editForm.producer.trim() || null
-        const parsedYear = editForm.release_year.trim() ? parseInt(editForm.release_year, 10) : NaN
-        updates.release_year = Number.isFinite(parsedYear) ? parsedYear : null
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+
+        if (!session?.access_token) {
+          throw new Error('You must be signed in to save changes.')
+        }
+
+        const response = await fetch('/api/media/update', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            videoId: editingVideo.id,
+            updates,
+          }),
+        })
+
+        const result = await response.json()
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to update video')
+        }
+
+        savedVideo = result.video
+      } else {
+        const { data, error } = await supabase
+          .from(table)
+          .update(updates)
+          .eq('id', editingVideo.id)
+          .select('*')
+          .maybeSingle()
+
+        if (error) throw error
+        if (!data) {
+          throw new Error('Update did not save. You may not have permission to edit this video.')
+        }
+        savedVideo = data
       }
 
-      const { error } = await supabase
-        .from(table)
-        .update(updates)
-        .eq('id', editingVideo.id)
-        .select()
-
-      if (error) throw error
-
-      // Update local state
-      setVideos(videos.map(v => 
-        v.id === editingVideo.id 
-          ? { ...v, ...updates }
-          : v
-      ))
+      // Update local state from what was actually saved
+      setVideos((prev) =>
+        prev.map((v) =>
+          v.id === editingVideo.id
+            ? {
+                ...v,
+                ...savedVideo,
+                source: table,
+                trailer_cloudflare_stream_uid:
+                  (savedVideo?.trailer_cloudflare_stream_uid as string) ||
+                  editForm.trailer_cloudflare_stream_uid.trim() ||
+                  undefined,
+                cloudflare_stream_uid:
+                  (savedVideo?.cloudflare_stream_uid as string) ||
+                  editForm.cloudflare_stream_uid.trim() ||
+                  undefined,
+              }
+            : v
+        )
+      )
 
       setEditingVideo(null)
       setCoverFile(null)
@@ -415,14 +593,18 @@ export default function ManageMediaPage() {
       
       toast({
         title: "Video Updated",
-        description: coverImagePath ? "Video and cover image have been updated successfully." : "Changes have been saved successfully.",
+        description: coverImagePath
+          ? "Video and cover image have been updated successfully."
+          : editForm.trailer_cloudflare_stream_uid.trim()
+            ? "Saved, including Trailer Cloudflare Video ID."
+            : "Changes have been saved successfully.",
       })
     } catch (error: any) {
       console.error('Error updating video:', error)
       setUploadingCover(false)
       toast({
         title: "Error",
-        description: "Failed to update video. Please try again.",
+        description: error?.message || "Failed to update video. Please try again.",
         variant: "destructive"
       })
     }
@@ -788,9 +970,7 @@ export default function ManageMediaPage() {
                               variant="link"
                               size="sm"
                               className="h-auto p-0 text-primary"
-                              onClick={() => setManagingSeriesId(
-                                managingSeriesId === video.id ? null : video.id
-                              )}
+                              onClick={() => setManagingSeriesId(video.id)}
                             >
                               <Layers className="h-3 w-3 mr-1 inline" />
                               Manage
@@ -939,60 +1119,193 @@ export default function ManageMediaPage() {
             </Table>
           )}
 
-          {managingSeriesId && (
-            <Card className="mt-6 border-primary/30">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-lg">
-                      Episodes — {parentTitles[managingSeriesId]}
-                    </CardTitle>
-                    <CardDescription>
-                      Manage episode order, pricing, and free/paid status
-                    </CardDescription>
+          {managingSeriesId && managingSeries && (
+            <Dialog
+              open={Boolean(managingSeriesId)}
+              onOpenChange={(open) => {
+                if (!open) setManagingSeriesId(null)
+              }}
+            >
+              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>
+                    Manage — {managingSeries.title}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Control free/paid pricing for the full title and each episode.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-6 py-2">
+                  <div className="rounded-lg border border-gray-700 bg-card/50 p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">Full title / series</p>
+                        <p className="text-sm text-muted-foreground">
+                          {managingSeries.is_free
+                            ? 'Free to watch'
+                            : `Paid — ${formatUsd(MOVIE_PURCHASE_PRICE)} unlocks the whole title`}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={managingSeries.is_free ? 'default' : 'secondary'}
+                        className={managingSeries.is_free ? 'bg-green-600' : ''}
+                      >
+                        {managingSeries.is_free ? 'Free' : formatUsd(MOVIE_PURCHASE_PRICE)}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-md border border-gray-800 px-3 py-2">
+                      <div>
+                        <p className="text-sm font-medium">Mark full title free</p>
+                        <p className="text-xs text-muted-foreground">
+                          When off, viewers pay {formatUsd(MOVIE_PURCHASE_PRICE)} (or subscribe)
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={Boolean(managingSeries.is_free)}
+                          onCheckedChange={() => handleToggleFree(managingSeries)}
+                        />
+                        <span className="text-xs text-muted-foreground w-10">
+                          {managingSeries.is_free ? 'Free' : 'Paid'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Link href={`/upload?parent=${managingSeriesId}`}>
-                      <Button size="sm">
-                        <Plus className="h-4 w-4 mr-1" />
-                        Add Episode
-                      </Button>
-                    </Link>
-                    <Button variant="outline" size="sm" onClick={() => setManagingSeriesId(null)}>
-                      Close
-                    </Button>
+
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="font-medium">Episodes ({seriesEpisodes.length})</p>
+                        <p className="text-sm text-muted-foreground">
+                          Paid episodes cost {formatUsd(EPISODE_PURCHASE_PRICE)} each. Default thumbnails are fine; upload a custom one optionally.
+                        </p>
+                      </div>
+                      <Link href={`/upload?parent=${managingSeriesId}`}>
+                        <Button size="sm">
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add Episode
+                        </Button>
+                      </Link>
+                    </div>
+
+                    {seriesEpisodes.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-8 border border-dashed border-gray-700 rounded-lg">
+                        No episodes yet. Add episodes to set per-episode pricing.
+                      </p>
+                    ) : (
+                      <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                        {seriesEpisodes.map((episode) => {
+                          const episodeThumb = getCoverImageUrl(episode)
+                          return (
+                          <div
+                            key={episode.id}
+                            className="flex flex-wrap items-center gap-3 rounded-lg border border-gray-800 px-3 py-2"
+                          >
+                            <div className="relative h-14 w-24 shrink-0 overflow-hidden rounded-md bg-zinc-800">
+                              {episodeThumb ? (
+                                <Image
+                                  src={episodeThumb}
+                                  alt={episode.title}
+                                  fill
+                                  className="object-cover"
+                                  unoptimized
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement
+                                    target.src = '/placeholder.svg'
+                                  }}
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center">
+                                  <Film className="h-5 w-5 text-muted-foreground" />
+                                </div>
+                              )}
+                              <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                                {episode.episode_number || '?'}
+                              </span>
+                              {!episode.is_free && (
+                                <Lock className="absolute top-1 right-1 h-3 w-3 text-white drop-shadow" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">{episode.title}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {episode.is_free
+                                  ? 'Free episode'
+                                  : `Paid — ${formatUsd(EPISODE_PURCHASE_PRICE)}`}
+                              </p>
+                              <label
+                                htmlFor={`episode-thumb-${episode.id}`}
+                                className="mt-1 inline-flex cursor-pointer items-center gap-1 text-xs text-primary hover:underline"
+                              >
+                                {uploadingEpisodeThumbId === episode.id ? (
+                                  <>
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Uploading…
+                                  </>
+                                ) : (
+                                  <>
+                                    <ImageIcon className="h-3 w-3" />
+                                    {episodeThumb ? 'Replace thumbnail' : 'Upload thumbnail'}
+                                  </>
+                                )}
+                              </label>
+                              <input
+                                id={`episode-thumb-${episode.id}`}
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp,image/gif"
+                                className="hidden"
+                                disabled={uploadingEpisodeThumbId === episode.id}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0]
+                                  if (file) {
+                                    void handleEpisodeThumbnailUpload(episode, file)
+                                  }
+                                  e.target.value = ''
+                                }}
+                              />
+                            </div>
+                            <Badge
+                              variant={episode.is_free ? 'default' : 'secondary'}
+                              className={episode.is_free ? 'bg-green-600' : ''}
+                            >
+                              {episode.is_free ? 'Free' : formatUsd(EPISODE_PURCHASE_PRICE)}
+                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={Boolean(episode.is_free)}
+                                onCheckedChange={() => handleToggleFree(episode)}
+                              />
+                              <span className="text-xs text-muted-foreground w-10">
+                                {episode.is_free ? 'Free' : 'Paid'}
+                              </span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setManagingSeriesId(null)
+                                handleEdit(episode)
+                              }}
+                              title="Edit episode"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          )
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent>
-                {seriesEpisodes.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">
-                    No episodes yet. Use Upload or Add Episode to create them.
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 gap-2">
-                    {seriesEpisodes.map((episode) => (
-                      <button
-                        key={episode.id}
-                        type="button"
-                        onClick={() => handleEdit(episode)}
-                        className={`relative aspect-square rounded-md text-sm font-medium transition-colors ${
-                          episode.is_free
-                            ? 'bg-zinc-800 hover:bg-zinc-700 text-white'
-                            : 'bg-zinc-800 hover:bg-zinc-700 text-white'
-                        }`}
-                        title={`${episode.title} — ${episode.is_free ? 'Free' : 'Paid'}`}
-                      >
-                        {episode.episode_number || '?'}
-                        {!episode.is_free && (
-                          <Lock className="absolute top-1 right-1 h-3 w-3 text-zinc-400" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setManagingSeriesId(null)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           )}
         </CardContent>
         <CardFooter>
@@ -1272,7 +1585,7 @@ export default function ManageMediaPage() {
                       disabled={uploadingCover}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Plays in the dashboard main player when set. Falls back to the full movie ID if empty.
+                      Plays in the dashboard main player when set. Required for New Releases hero — full movie ID is not used there.
                     </p>
                   </div>
                 </div>
