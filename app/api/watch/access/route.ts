@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
     const { data: video, error } = await supabaseServer
       .from('video_assets')
-      .select('id, title, description, content_type, parent_id, status')
+      .select('id, title, description, content_type, parent_id, status, is_free')
       .eq('id', videoId)
       .maybeSingle()
 

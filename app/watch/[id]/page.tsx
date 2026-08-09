@@ -69,7 +69,13 @@ export default function WatchPage() {
 
 
   useEffect(() => {
-    setPlaybackMode('trailer')
+    // Reset player UI when switching titles; final mode is set after access check.
+    // Keep full intent when navigating from the episode grid (?play=full).
+    const wantsFull =
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('play') === 'full'
+    setPlaybackMode(wantsFull ? 'full' : 'trailer')
+    setAccessInfo(null)
   }, [params.id])
 
   const handleWatchFull = () => {
@@ -93,6 +99,14 @@ export default function WatchPage() {
 
     // No access — start purchase for the full title / episode
     void handlePurchase(accessInfo?.isEpisode ? 'episode' : 'movie')
+  }
+
+  const handlePlayEpisode = (episodeId: string) => {
+    if (episodeId === params.id) {
+      handleWatchFull()
+      return
+    }
+    router.push(`/watch/${episodeId}?play=full`)
   }
 
   const fetchAccess = async (videoId: string) => {
@@ -359,14 +373,30 @@ export default function WatchPage() {
         const hasTrailer = Boolean(
           data.trailer_cloudflare_stream_uid || parentInfo?.trailer_cloudflare_stream_uid
         )
+        const isEpisode =
+          Boolean(data.parent_id) ||
+          data.content_type === 'episode' ||
+          Boolean(access.isEpisode)
 
-        if (hasTrailer && !(access.hasAccess && data.content_type === 'episode')) {
+        const playFullParam =
+          typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('play') === 'full'
+
+        // Unlocked episodes should play full content (not the series trailer).
+        // ?play=full is set when picking an episode from the grid.
+        if (access.hasAccess && (isEpisode || playFullParam || !hasTrailer)) {
+          setPlaybackMode('full')
+        } else if (hasTrailer) {
           setPlaybackMode('trailer')
         } else if (access.hasAccess) {
           setPlaybackMode('full')
         } else {
           setLoading(false)
           return
+        }
+
+        if (playFullParam) {
+          window.history.replaceState({}, '', `/watch/${params.id}`)
         }
 
         if (!access.hasAccess) {
@@ -578,7 +608,7 @@ export default function WatchPage() {
         hlsRef.current = null
       }
     }
-  }, [params.id, user?.id, user?.subscription, hasAccess])
+  }, [params.id, user?.id, user?.subscription, router])
 
   useEffect(() => {
     if (hasAccess && videoData && !loading) {
@@ -1011,6 +1041,7 @@ export default function WatchPage() {
             isLoggedIn={Boolean(user)}
             isPurchasing={isPurchasing}
             onPurchase={handlePurchase}
+            onPlayEpisode={handlePlayEpisode}
           />
         )}
       </div>

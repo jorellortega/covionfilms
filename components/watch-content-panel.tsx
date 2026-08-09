@@ -21,6 +21,7 @@ type WatchContentPanelProps = {
   isLoggedIn: boolean
   isPurchasing: boolean
   onPurchase: (type: PurchaseType, videoId?: string) => void
+  onPlayEpisode?: (episodeId: string) => void
 }
 
 function SubscriptionBanner({ subscriptionTier }: { subscriptionTier: string }) {
@@ -53,6 +54,7 @@ export function WatchContentPanel({
   isLoggedIn,
   isPurchasing,
   onPurchase,
+  onPlayEpisode,
 }: WatchContentPanelProps) {
   const router = useRouter()
   const [seriesData, setSeriesData] = useState<SeriesAccessResult | null>(null)
@@ -89,8 +91,15 @@ export function WatchContentPanel({
   }, [seriesId])
 
   const handleSelectEpisode = (episode: EpisodeAccess) => {
-    if (episode.hasAccess) {
-      router.push(`/watch/${episode.id}`)
+    const canPlay =
+      episode.hasAccess || episode.is_free || Boolean(seriesData?.hasFullAccess)
+
+    if (canPlay) {
+      if (onPlayEpisode) {
+        onPlayEpisode(episode.id)
+      } else {
+        router.push(`/watch/${episode.id}?play=full`)
+      }
       return
     }
 
