@@ -6,7 +6,7 @@ import {
   type PurchaseType,
 } from '@/lib/content-pricing'
 import { getAuthenticatedUser } from '@/lib/get-authenticated-user'
-import { getSiteUrl, getStripe, isStripeConfigured } from '@/lib/stripe'
+import { getSiteUrl, getStripe, getOrCreateStripeCustomer, isStripeConfigured } from '@/lib/stripe'
 import { supabaseServer } from '@/lib/supabaseServer'
 
 export async function POST(request: NextRequest) {
@@ -101,24 +101,10 @@ export async function POST(request: NextRequest) {
     const stripe = getStripe()
     const siteUrl = getSiteUrl(request)
 
-    // Reuse Stripe customer if we have one from subscriptions
-    const { data: existingSub } = await supabaseServer
-      .from('subscriptions')
-      .select('stripe_customer_id')
-      .eq('user_id', user.id)
-      .not('stripe_customer_id', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    let customerId = existingSub?.stripe_customer_id as string | undefined
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: user.email,
-        metadata: { userId: user.id },
-      })
-      customerId = customer.id
-    }
+    const customerId = await getOrCreateStripeCustomer({
+      userId: user.id,
+      email: user.email,
+    })
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
