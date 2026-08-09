@@ -283,6 +283,17 @@ export default function WatchPage() {
           throw new Error('Video not found')
         }
 
+        // Upcoming poster-only titles use a dedicated page (no stream yet)
+        const isUpcomingListing =
+          data.dashboard_section === 'coming_soon' &&
+          !data.cloudflare_stream_uid &&
+          !data.manifest_url
+
+        if (isUpcomingListing) {
+          router.replace(`/upcoming/${data.id}`)
+          return
+        }
+
         // Check if video is ready
         if (data.status !== 'ready') {
           throw new Error('Video is not ready for playback')

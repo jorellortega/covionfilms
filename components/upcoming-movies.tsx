@@ -20,7 +20,7 @@ export function UpcomingMovies() {
     user?.role === "admin" || user?.role === "management" || user?.role === "creator"
 
   const handleMovieClick = (id: string) => {
-    router.push(`/watch/${id}`)
+    router.push(`/upcoming/${id}`)
   }
 
   const renderGridView = () => (

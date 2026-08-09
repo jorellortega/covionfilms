@@ -3,10 +3,12 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
-import { Film, Clock, Star, RefreshCw, ViewIcon } from "lucide-react"
+import { Film, RefreshCw, ViewIcon } from "lucide-react"
 import Image from "next/image"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { useAuth } from "@/components/auth-provider"
 import { fetchDashboardVideos } from "@/lib/dashboard-videos"
 
 interface Video {
@@ -18,59 +20,14 @@ interface Video {
   is_public?: boolean
 }
 
-interface MockRelease {
-  id: string
-  title: string
-  genre: string
-  releaseDate: string
-  isMock: true
-}
-
-type DisplayItem = Video | MockRelease
-
 export function NewReleases() {
   const [videos, setVideos] = useState<Video[]>([])
   const [loading, setLoading] = useState(false)
   const [viewMode, setViewMode] = useState<"scroll" | "grid" | "list">("scroll")
   const router = useRouter()
-
-  const mockReleases: MockRelease[] = [
-    {
-      id: "mock-1",
-      title: "The Last Frontier",
-      genre: "Sci-Fi",
-      releaseDate: "Coming Soon",
-      isMock: true,
-    },
-    {
-      id: "mock-2",
-      title: "Midnight Dreams",
-      genre: "Thriller",
-      releaseDate: "Coming Soon",
-      isMock: true,
-    },
-    {
-      id: "mock-3",
-      title: "Ocean's Heart",
-      genre: "Adventure",
-      releaseDate: "Coming Soon",
-      isMock: true,
-    },
-    {
-      id: "mock-4",
-      title: "City Lights",
-      genre: "Drama",
-      releaseDate: "Coming Soon",
-      isMock: true,
-    },
-    {
-      id: "mock-5",
-      title: "The Silent Echo",
-      genre: "Mystery",
-      releaseDate: "Coming Soon",
-      isMock: true,
-    },
-  ]
+  const { user } = useAuth()
+  const canManageMedia =
+    user?.role === "admin" || user?.role === "management" || user?.role === "creator"
 
   useEffect(() => {
     void fetchNewReleases()
@@ -79,7 +36,7 @@ export function NewReleases() {
   const fetchNewReleases = async () => {
     try {
       setLoading(true)
-      const allVideos = await fetchDashboardVideos("new_releases", 5)
+      const allVideos = await fetchDashboardVideos("new_releases", 20)
       setVideos(allVideos)
     } catch (error) {
       console.error("Error fetching new releases:", error)
@@ -89,52 +46,9 @@ export function NewReleases() {
     }
   }
 
-  const getDisplayItems = (): DisplayItem[] => {
-    const actualVideos = videos.slice(0, 5)
-    const remainingSlots = 5 - actualVideos.length
-
-    if (remainingSlots <= 0) {
-      return actualVideos
-    }
-
-    return [...actualVideos, ...mockReleases.slice(0, remainingSlots)]
-  }
-
   const handleVideoClick = (videoId: string) => {
-    if (!videoId.startsWith("mock-")) {
-      router.push(`/watch/${videoId}`)
-    }
+    router.push(`/watch/${videoId}`)
   }
-
-  const displayItems = getDisplayItems()
-
-  const renderMockCard = (mockItem: MockRelease, className: string) => (
-    <Card
-      key={mockItem.id}
-      className={`flex items-center justify-center bg-card relative overflow-hidden border border-gray-700 hover:border-primary/50 transition-colors group ${className}`}
-    >
-      <CardContent className="p-0 w-full h-full">
-        <div className="flex flex-col items-center justify-center h-full space-y-3 p-4 text-center">
-          <div className="relative">
-            <Film className="h-12 w-12 text-muted-foreground opacity-60 group-hover:opacity-80 transition-opacity" />
-            <div className="absolute -top-1 -right-1 bg-primary rounded-full p-1">
-              <Clock className="h-3 w-3 text-white" />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-white group-hover:text-primary transition-colors">
-              {mockItem.title}
-            </p>
-            <p className="text-xs text-muted-foreground">{mockItem.genre}</p>
-            <div className="flex items-center justify-center gap-1 text-xs text-yellow-500">
-              <Star className="h-3 w-3" />
-              <span>Coming Soon</span>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
 
   const renderVideoCard = (video: Video, className: string) => (
     <Card
@@ -166,9 +80,6 @@ export function NewReleases() {
         ) : (
           <div className="flex flex-col items-center justify-center h-full space-y-2 p-4">
             <Film className="h-12 w-12 text-muted-foreground opacity-50 group-hover:opacity-70 transition-opacity" />
-            <p className="text-center text-sm text-muted-foreground opacity-50 group-hover:opacity-70 transition-opacity">
-              {video.title}
-            </p>
           </div>
         )}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/60 transition-colors duration-300 flex items-end">
@@ -180,75 +91,52 @@ export function NewReleases() {
     </Card>
   )
 
-  const renderItem = (item: DisplayItem, className: string) => {
-    if ("isMock" in item) {
-      return renderMockCard(item, className)
-    }
-    return renderVideoCard(item, className)
-  }
-
   const renderGridView = () => (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 p-4">
-      {displayItems.map((item) =>
-        renderItem(item, "w-full aspect-[2/3] transition-transform duration-300 ease-in-out group-hover:scale-105")
+      {videos.map((video) =>
+        renderVideoCard(
+          video,
+          "w-full aspect-[2/3] transition-transform duration-300 ease-in-out group-hover:scale-105"
+        )
       )}
     </div>
   )
 
   const renderScrollView = () => (
     <div className="flex w-max space-x-4 p-4">
-      {displayItems.map((item) => renderItem(item, "w-[150px] h-[225px] flex-shrink-0"))}
+      {videos.map((video) => renderVideoCard(video, "w-[150px] h-[225px] flex-shrink-0"))}
     </div>
   )
 
   const renderListView = () => (
     <div className="space-y-4 p-4">
-      {displayItems.map((item) => {
-        if ("isMock" in item) {
-          return (
-            <div
-              key={item.id}
-              className="flex items-center space-x-4 p-2 bg-card rounded-md border border-gray-800"
-            >
-              <div className="w-16 h-24 flex-shrink-0 flex items-center justify-center bg-muted rounded-md">
+      {videos.map((video) => (
+        <div
+          key={video.id}
+          className="flex items-center space-x-4 p-2 bg-card rounded-md border border-gray-800 cursor-pointer hover:border-primary/50"
+          onClick={() => handleVideoClick(video.id)}
+        >
+          <div className="w-16 h-24 relative flex-shrink-0">
+            {video.cover_image_path ? (
+              <Image
+                src={video.cover_image_path}
+                alt={video.title}
+                fill
+                className="object-contain bg-black rounded-md"
+                unoptimized
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-muted rounded-md">
                 <Film className="h-8 w-8 text-muted-foreground opacity-50" />
               </div>
-              <div>
-                <p className="font-semibold text-primary futuristic-text">{item.title}</p>
-                <p className="text-sm text-muted-foreground">{item.genre} · Coming Soon</p>
-              </div>
-            </div>
-          )
-        }
-
-        return (
-          <div
-            key={item.id}
-            className="flex items-center space-x-4 p-2 bg-card rounded-md border border-gray-800 cursor-pointer hover:border-primary/50"
-            onClick={() => handleVideoClick(item.id)}
-          >
-            <div className="w-16 h-24 relative flex-shrink-0">
-              {item.cover_image_path ? (
-                <Image
-                  src={item.cover_image_path}
-                  alt={item.title}
-                  fill
-                  className="object-contain bg-black rounded-md"
-                  unoptimized
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-muted rounded-md">
-                  <Film className="h-8 w-8 text-muted-foreground opacity-50" />
-                </div>
-              )}
-            </div>
-            <div>
-              <p className="font-semibold text-primary futuristic-text">{item.title}</p>
-              <p className="text-sm text-green-400">New release</p>
-            </div>
+            )}
           </div>
-        )
-      })}
+          <div>
+            <p className="font-semibold text-primary futuristic-text">{video.title}</p>
+            <p className="text-sm text-green-400">New release</p>
+          </div>
+        </div>
+      ))}
     </div>
   )
 
@@ -259,19 +147,14 @@ export function NewReleases() {
           New Releases
         </h2>
         <div className="flex items-center gap-2 sm:gap-4">
-          <div className="hidden sm:block text-sm text-muted-foreground">
-            {videos.length > 0 ? (
+          {videos.length > 0 && (
+            <div className="hidden sm:block text-sm text-muted-foreground">
               <span className="flex items-center gap-2">
                 <span className="w-2 h-2 bg-green-500 rounded-full" />
                 {videos.length} new video{videos.length !== 1 ? "s" : ""} available
               </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-yellow-500 rounded-full" />
-                Coming soon
-              </span>
-            )}
-          </div>
+            </div>
+          )}
           <button
             onClick={() => void fetchNewReleases()}
             disabled={loading}
@@ -300,21 +183,36 @@ export function NewReleases() {
         </div>
       </div>
 
-      {loading && (
-        <div className="flex items-center justify-center py-2">
+      {loading && videos.length === 0 ? (
+        <div className="flex items-center justify-center py-8">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" />
-            <span>Checking for new videos...</span>
+            <span>Loading new releases...</span>
           </div>
         </div>
+      ) : videos.length === 0 ? (
+        <div className="text-center py-8 border border-gray-800 rounded-lg">
+          <p className="text-muted-foreground mb-2">No new releases yet.</p>
+          {canManageMedia ? (
+            <p className="text-sm text-muted-foreground">
+              In{" "}
+              <Link href="/manage-media" className="text-primary underline">
+                Manage Media
+              </Link>
+              , set a video&apos;s dashboard section to <strong>New Releases</strong>.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">Check back soon for new titles.</p>
+          )}
+        </div>
+      ) : (
+        <ScrollArea className="w-full rounded-md border border-gray-800">
+          {viewMode === "grid" && renderGridView()}
+          {viewMode === "scroll" && renderScrollView()}
+          {viewMode === "list" && renderListView()}
+          {viewMode === "scroll" && <ScrollBar orientation="horizontal" />}
+        </ScrollArea>
       )}
-
-      <ScrollArea className="w-full rounded-md border border-gray-800">
-        {viewMode === "grid" && renderGridView()}
-        {viewMode === "scroll" && renderScrollView()}
-        {viewMode === "list" && renderListView()}
-        {viewMode === "scroll" && <ScrollBar orientation="horizontal" />}
-      </ScrollArea>
     </section>
   )
 }
