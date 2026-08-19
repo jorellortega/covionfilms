@@ -5,7 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { Film, Lock } from 'lucide-react'
 import type { EpisodeAccess } from '@/lib/content-access'
-import { EPISODE_PURCHASE_PRICE, formatUsd } from '@/lib/content-pricing'
+import { EPISODE_PURCHASE_PRICE, formatUsd, hasPaidSubscriptionAccess } from '@/lib/content-pricing'
 import { cn } from '@/lib/utils'
 
 const EPISODES_PER_PAGE = 25
@@ -16,13 +16,29 @@ type EpisodeGridProps = {
   onSelectEpisode: (episode: EpisodeAccess) => void
   episodePrice?: number
   hasFullAccess?: boolean
+  subscriptionTier?: string
 }
 
 function getEpisodePricingLabel(
   episode: EpisodeAccess,
   episodePrice: number,
-  hasFullAccess: boolean
+  hasFullAccess: boolean,
+  subscriptionTier: string
 ): { badge: string; detail: string; unlocked: boolean; showLock: boolean } {
+  const onPlan =
+    hasPaidSubscriptionAccess(subscriptionTier) ||
+    episode.reason === 'subscription' ||
+    episode.reason === 'admin'
+
+  if (onPlan) {
+    return {
+      badge: 'Included',
+      detail: 'Included with your plan',
+      unlocked: true,
+      showLock: false,
+    }
+  }
+
   if (episode.is_free) {
     return {
       badge: 'Free',
@@ -45,7 +61,7 @@ function getEpisodePricingLabel(
 
   if (unlocked) {
     return {
-      badge: formatUsd(episodePrice),
+      badge: 'Included',
       detail: 'Included with your access',
       unlocked: true,
       showLock: false,
@@ -66,6 +82,7 @@ export function EpisodeGrid({
   onSelectEpisode,
   episodePrice = EPISODE_PURCHASE_PRICE,
   hasFullAccess = false,
+  subscriptionTier = 'free',
 }: EpisodeGridProps) {
   const [activeRange, setActiveRange] = useState(0)
 
@@ -122,7 +139,12 @@ export function EpisodeGrid({
         {visibleEpisodes.map((episode) => {
           const isSelected = episode.id === selectedEpisodeId
           const thumb = episode.cover_image_path || null
-          const pricing = getEpisodePricingLabel(episode, episodePrice, hasFullAccess)
+          const pricing = getEpisodePricingLabel(
+            episode,
+            episodePrice,
+            hasFullAccess,
+            subscriptionTier
+          )
 
           return (
             <button
@@ -163,19 +185,21 @@ export function EpisodeGrid({
                 <span className="absolute bottom-1.5 left-2 text-xs font-semibold text-white">
                   {episode.episode_number || '?'}
                 </span>
-                {episode.is_free ? (
+                {pricing.unlocked && !episode.is_free ? (
+                  <span
+                    className={cn(
+                      'absolute top-2 right-2 inline-flex items-center rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wide shadow-md',
+                      'bg-emerald-800 text-emerald-100'
+                    )}
+                  >
+                    {pricing.badge}
+                  </span>
+                ) : episode.is_free ? (
                   <span className="absolute top-2 right-2 inline-flex items-center rounded-md bg-green-600 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white shadow-md">
                     Free
                   </span>
                 ) : (
-                  <span
-                    className={cn(
-                      'absolute top-2 right-2 inline-flex items-center rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wide shadow-md',
-                      pricing.unlocked
-                        ? 'bg-emerald-800 text-emerald-100'
-                        : 'bg-black/85 text-amber-300'
-                    )}
-                  >
+                  <span className="absolute top-2 right-2 inline-flex items-center rounded-md bg-black/85 px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-amber-300 shadow-md">
                     {pricing.badge}
                   </span>
                 )}
@@ -211,7 +235,7 @@ type SubscriptionBannerProps = {
 }
 
 export function SubscriptionBanner({ subscriptionTier }: SubscriptionBannerProps) {
-  if (subscriptionTier === 'standard' || subscriptionTier === 'family') {
+  if (hasPaidSubscriptionAccess(subscriptionTier)) {
     return null
   }
 

@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { formatUsd } from '@/lib/content-pricing'
+import { formatUsd, hasPaidSubscriptionAccess } from '@/lib/content-pricing'
 import { Lock, Play, Sparkles } from 'lucide-react'
 
 type WatchPaywallProps = {
@@ -81,11 +81,11 @@ export function WatchPaywall({
               Included with Standard or Family plans
             </div>
             <p className="text-xs text-muted-foreground">
-              {subscriptionTier === 'standard' || subscriptionTier === 'family'
+              {hasPaidSubscriptionAccess(subscriptionTier)
                 ? 'Your plan includes this title.'
                 : 'Subscribe to Standard or Family to watch without paying per title.'}
             </p>
-            {subscriptionTier !== 'standard' && subscriptionTier !== 'family' && (
+            {!hasPaidSubscriptionAccess(subscriptionTier) && (
               <Button asChild variant="secondary" size="sm" className="w-full">
                 <Link href="/subscribe">View Plans</Link>
               </Button>

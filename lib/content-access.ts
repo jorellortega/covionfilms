@@ -3,8 +3,9 @@ import { getCoverImageUrl } from '@/lib/cover-image'
 import {
   EPISODE_PURCHASE_PRICE,
   MOVIE_PURCHASE_PRICE,
-  SUBSCRIPTION_FREE_ACCESS_TIERS,
+  hasPaidSubscriptionAccess,
   isEpisodeContent,
+  normalizeSubscriptionTier,
   type PurchaseType,
 } from '@/lib/content-pricing'
 
@@ -94,7 +95,7 @@ async function getUserPurchases(userId: string) {
 
 function hasSubscriptionAccess(subscriptionTier: string, userRole?: string | null) {
   if (userRole && ADMIN_ROLES.has(userRole)) return true
-  return SUBSCRIPTION_FREE_ACCESS_TIERS.has(subscriptionTier)
+  return hasPaidSubscriptionAccess(subscriptionTier)
 }
 
 export async function checkEpisodeAccess(
@@ -157,6 +158,7 @@ export async function getSeriesAccess(
     .eq('parent_id', seriesId)
     .order('episode_number', { ascending: true })
 
+  const normalizedTier = normalizeSubscriptionTier(subscriptionTier)
   const purchases = userId ? await getUserPurchases(userId) : []
   const episodeAccessList: EpisodeAccess[] = []
 
@@ -166,7 +168,7 @@ export async function getSeriesAccess(
       series,
       userId,
       userRole,
-      subscriptionTier,
+      normalizedTier,
       purchases
     )
 
@@ -183,14 +185,14 @@ export async function getSeriesAccess(
   }
 
   const hasFullAccess =
-    hasSubscriptionAccess(subscriptionTier, userRole) ||
+    hasSubscriptionAccess(normalizedTier, userRole) ||
     Boolean(series.is_free) ||
     purchases.some((purchase) => purchase.purchase_type === 'movie' && purchase.video_id === seriesId)
 
   return {
     series,
     episodes: episodeAccessList,
-    subscriptionTier,
+    subscriptionTier: normalizedTier,
     hasFullAccess,
     pricing: {
       movie: MOVIE_PURCHASE_PRICE,
@@ -207,11 +209,12 @@ export async function checkVideoAccess(
 ): Promise<AccessResult> {
   const isEpisode = isEpisodeContent(video.content_type, video.parent_id)
   const movieVideoId = isEpisode && video.parent_id ? video.parent_id : video.id
+  const normalizedTier = normalizeSubscriptionTier(subscriptionTier)
 
   const base: AccessResult = {
     hasAccess: false,
     reason: 'none',
-    subscriptionTier,
+    subscriptionTier: normalizedTier,
     isEpisode,
     movieVideoId,
     parentTitle: isEpisode && video.parent_id ? await getParentTitle(video.parent_id) : null,
@@ -225,7 +228,7 @@ export async function checkVideoAccess(
     return { ...base, hasAccess: true, reason: 'admin' }
   }
 
-  if (SUBSCRIPTION_FREE_ACCESS_TIERS.has(subscriptionTier)) {
+  if (hasPaidSubscriptionAccess(normalizedTier)) {
     return { ...base, hasAccess: true, reason: 'subscription' }
   }
 

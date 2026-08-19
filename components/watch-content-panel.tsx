@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { EpisodeGrid } from '@/components/episode-grid'
 import { MovieAccessBlocks } from '@/components/movie-access-blocks'
 import type { AccessResult, EpisodeAccess, SeriesAccessResult } from '@/lib/content-access'
-import type { PurchaseType } from '@/lib/content-pricing'
+import { hasPaidSubscriptionAccess, type PurchaseType } from '@/lib/content-pricing'
 import Link from 'next/link'
 import { Sparkles } from 'lucide-react'
 
@@ -20,13 +20,19 @@ type WatchContentPanelProps = {
   accessInfo: AccessResult | null
   isLoggedIn: boolean
   isPurchasing: boolean
+  viewerSubscription?: string | null
   onPurchase: (type: PurchaseType, videoId?: string) => void
   onPlayEpisode?: (episodeId: string) => void
 }
 
 function SubscriptionBanner({ subscriptionTier }: { subscriptionTier: string }) {
-  if (subscriptionTier === 'standard' || subscriptionTier === 'family') {
-    return null
+  if (hasPaidSubscriptionAccess(subscriptionTier)) {
+    return (
+      <p className="text-sm text-green-400 flex items-center gap-2">
+        <Sparkles className="h-4 w-4" />
+        Included with your {subscriptionTier} plan
+      </p>
+    )
   }
 
   return (
@@ -53,6 +59,7 @@ export function WatchContentPanel({
   accessInfo,
   isLoggedIn,
   isPurchasing,
+  viewerSubscription,
   onPurchase,
   onPlayEpisode,
 }: WatchContentPanelProps) {
@@ -90,9 +97,20 @@ export function WatchContentPanel({
     loadEpisodes()
   }, [seriesId])
 
+  const resolvedTier =
+    [seriesData?.subscriptionTier, accessInfo?.subscriptionTier, viewerSubscription].find((tier) =>
+      hasPaidSubscriptionAccess(tier)
+    ) ||
+    seriesData?.subscriptionTier ||
+    accessInfo?.subscriptionTier ||
+    'free'
+
   const handleSelectEpisode = (episode: EpisodeAccess) => {
     const canPlay =
-      episode.hasAccess || episode.is_free || Boolean(seriesData?.hasFullAccess)
+      episode.hasAccess ||
+      episode.is_free ||
+      Boolean(seriesData?.hasFullAccess) ||
+      hasPaidSubscriptionAccess(resolvedTier)
 
     if (canPlay) {
       if (onPlayEpisode) {
@@ -143,7 +161,7 @@ export function WatchContentPanel({
             <div className="flex-1 min-w-0">
               <h2 className="text-lg font-bold truncate">{seriesData.series.title}</h2>
               <div className="mt-3">
-                <SubscriptionBanner subscriptionTier={seriesData.subscriptionTier} />
+                <SubscriptionBanner subscriptionTier={resolvedTier} />
               </div>
             </div>
           </div>
@@ -184,7 +202,8 @@ export function WatchContentPanel({
                 selectedEpisodeId={videoId}
                 onSelectEpisode={handleSelectEpisode}
                 episodePrice={seriesData.pricing.episode}
-                hasFullAccess={seriesData.hasFullAccess}
+                hasFullAccess={seriesData.hasFullAccess || hasPaidSubscriptionAccess(resolvedTier)}
+                subscriptionTier={resolvedTier}
               />
             )}
           </div>

@@ -134,6 +134,7 @@ export function SeriesEpisodesPanel({
               onSelectEpisode={handleSelectEpisode}
               episodePrice={seriesData.pricing.episode}
               hasFullAccess={seriesData.hasFullAccess}
+              subscriptionTier={seriesData.subscriptionTier}
             />
           )}
         </div>

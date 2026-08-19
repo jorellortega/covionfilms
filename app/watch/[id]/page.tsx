@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { createClient } from '@supabase/supabase-js'
 import Hls from 'hls.js'
+import { supabase } from '@/lib/supabaseClient'
 import {
   getCloudflareStreamIframeUrl,
   isCloudflareStreamUrl,
@@ -21,20 +21,26 @@ import { WatchPaywall } from '@/components/watch-paywall'
 import { WatchContentPanel } from '@/components/watch-content-panel'
 import { toast } from '@/hooks/use-toast'
 import type { AccessResult } from '@/lib/content-access'
-import { formatUsd, type PurchaseType } from '@/lib/content-pricing'
+import { formatUsd, hasPaidSubscriptionAccess, type PurchaseType } from '@/lib/content-pricing'
 import { useRecordPlay } from '@/hooks/use-record-play'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+function hasPlayableSource(video: {
+  cloudflare_stream_uid?: string | null
+  manifest_url?: string | null
+}) {
+  return Boolean(video.cloudflare_stream_uid || video.manifest_url)
+}
+
+function isFailedVideoStatus(status?: string | null) {
+  return status === 'error' || status === 'failed' || status === 'deleted'
+}
 
 export default function WatchPage() {
   const params = useParams()
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, isLoading: authLoading } = useAuth()
   
   const [videoData, setVideoData] = useState<any>(null)
   const [accessInfo, setAccessInfo] = useState<AccessResult | null>(null)
@@ -53,8 +59,12 @@ export default function WatchPage() {
     title?: string | null
   } | null>(null)
   const [playbackMode, setPlaybackMode] = useState<'trailer' | 'full'>('trailer')
+  const [playbackUnavailable, setPlaybackUnavailable] = useState<string | null>(null)
 
-  const hasAccess = accessInfo?.hasAccess ?? false
+  const planIncludesTitle =
+    hasPaidSubscriptionAccess(user?.subscription) ||
+    hasPaidSubscriptionAccess(accessInfo?.subscriptionTier)
+  const hasAccess = (accessInfo?.hasAccess ?? false) || planIncludesTitle
   const { recordPlay } = useRecordPlay(params.id as string)
   const lastProgressRef = useRef(0)
 
@@ -76,6 +86,8 @@ export default function WatchPage() {
       new URLSearchParams(window.location.search).get('play') === 'full'
     setPlaybackMode(wantsFull ? 'full' : 'trailer')
     setAccessInfo(null)
+    setPlaybackUnavailable(null)
+    setError(null)
   }, [params.id])
 
   const handleWatchFull = () => {
@@ -126,6 +138,27 @@ export default function WatchPage() {
 
   const handlePurchase = async (purchaseType: PurchaseType, targetVideoId?: string) => {
     const videoId = targetVideoId || (params.id as string)
+
+    if (
+      hasPaidSubscriptionAccess(user?.subscription) ||
+      hasPaidSubscriptionAccess(accessInfo?.subscriptionTier)
+    ) {
+      if (videoId !== params.id) {
+        router.push(`/watch/${videoId}?play=full`)
+        return
+      }
+      setVideoData((prev: any) =>
+        prev?.cloudflare_stream_uid
+          ? {
+              ...prev,
+              cloudflare_iframe_url: getCloudflareStreamIframeUrl(prev.cloudflare_stream_uid),
+            }
+          : prev
+      )
+      setPlaybackMode('full')
+      return
+    }
+
     const {
       data: { session },
     } = await supabase.auth.getSession()
@@ -277,11 +310,12 @@ export default function WatchPage() {
 
   useEffect(() => {
     const loadVideo = async () => {
-      if (!params.id) return
+      if (!params.id || authLoading) return
 
       try {
         setLoading(true)
-        
+        setPlaybackUnavailable(null)
+
         // Get video data from database
         const { data, error: dbError } = await supabase
           .from('video_assets')
@@ -308,9 +342,27 @@ export default function WatchPage() {
           return
         }
 
-        // Check if video is ready
-        if (data.status !== 'ready') {
-          throw new Error('Video is not ready for playback')
+        const playable = hasPlayableSource(data)
+        const isSeriesShell = data.content_type === 'series' && !playable
+
+        if (isFailedVideoStatus(data.status) && !playable && !isSeriesShell) {
+          throw new Error('This video failed to process')
+        }
+
+        // Series container with no stream: jump to the first episode
+        if (isSeriesShell) {
+          const { data: firstEpisode } = await supabase
+            .from('video_assets')
+            .select('id')
+            .eq('parent_id', data.id)
+            .order('episode_number', { ascending: true })
+            .limit(1)
+            .maybeSingle()
+
+          if (firstEpisode?.id) {
+            router.replace(`/watch/${firstEpisode.id}`)
+            return
+          }
         }
 
         setVideoData(data)
@@ -352,23 +404,11 @@ export default function WatchPage() {
 
         setSeriesId(resolvedSeriesId)
 
-        if (data.content_type === 'series' && !data.cloudflare_stream_uid && !data.manifest_url) {
-          const { data: firstEpisode } = await supabase
-            .from('video_assets')
-            .select('id')
-            .eq('parent_id', data.id)
-            .order('episode_number', { ascending: true })
-            .limit(1)
-            .maybeSingle()
-
-          if (firstEpisode?.id) {
-            router.replace(`/watch/${firstEpisode.id}`)
-            return
-          }
-        }
-
         const access = await fetchAccess(params.id as string)
         setAccessInfo(access)
+
+        const included =
+          access.hasAccess || hasPaidSubscriptionAccess(user?.subscription)
 
         const hasTrailer = Boolean(
           data.trailer_cloudflare_stream_uid || parentInfo?.trailer_cloudflare_stream_uid
@@ -384,11 +424,11 @@ export default function WatchPage() {
 
         // Unlocked episodes should play full content (not the series trailer).
         // ?play=full is set when picking an episode from the grid.
-        if (access.hasAccess && (isEpisode || playFullParam || !hasTrailer)) {
+        if (included && (isEpisode || playFullParam || !hasTrailer)) {
           setPlaybackMode('full')
         } else if (hasTrailer) {
           setPlaybackMode('trailer')
-        } else if (access.hasAccess) {
+        } else if (included) {
           setPlaybackMode('full')
         } else {
           setLoading(false)
@@ -399,7 +439,7 @@ export default function WatchPage() {
           window.history.replaceState({}, '', `/watch/${params.id}`)
         }
 
-        if (!access.hasAccess) {
+        if (!included) {
           // Trailer-only preview until they unlock
           setLoading(false)
           return
@@ -411,7 +451,9 @@ export default function WatchPage() {
             setLoading(false)
             return
           }
-          throw new Error('No manifest URL found')
+          setPlaybackUnavailable('This video is still processing and is not ready to play yet.')
+          setLoading(false)
+          return
         }
 
         console.log('📹 Video manifest URL:', manifestUrl)
@@ -608,7 +650,7 @@ export default function WatchPage() {
         hlsRef.current = null
       }
     }
-  }, [params.id, user?.id, user?.subscription, router])
+  }, [params.id, user?.id, user?.subscription, authLoading, router])
 
   useEffect(() => {
     if (hasAccess && videoData && !loading) {
@@ -733,7 +775,14 @@ export default function WatchPage() {
           </CardHeader>
           <CardContent>
             <div className="relative bg-black rounded-lg overflow-hidden">
-              {showingTrailer ? (
+              {playbackUnavailable ? (
+                <div className="aspect-video w-full flex items-center justify-center p-6 text-center">
+                  <div className="space-y-2 max-w-md">
+                    <p className="text-sm font-medium text-white">Video is still processing</p>
+                    <p className="text-sm text-zinc-400">{playbackUnavailable}</p>
+                  </div>
+                </div>
+              ) : showingTrailer ? (
                 <div className="w-full space-y-3">
                   <div className="aspect-video w-full">
                     <iframe
@@ -751,8 +800,11 @@ export default function WatchPage() {
                         Trailer
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        Preview only — unlock to watch the full title
-                        {accessInfo?.isEpisode ? ' or this episode' : ''}.
+                        {hasAccess
+                          ? hasPaidSubscriptionAccess(accessInfo?.subscriptionTier)
+                            ? 'Included with your plan — watch the full title whenever you like.'
+                            : 'You already have access — watch the full title whenever you like.'
+                          : `Preview only — unlock to watch the full title${accessInfo?.isEpisode ? ' or this episode' : ''}.`}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1040,6 +1092,7 @@ export default function WatchPage() {
             accessInfo={accessInfo}
             isLoggedIn={Boolean(user)}
             isPurchasing={isPurchasing}
+            viewerSubscription={user?.subscription}
             onPurchase={handlePurchase}
             onPlayEpisode={handlePlayEpisode}
           />

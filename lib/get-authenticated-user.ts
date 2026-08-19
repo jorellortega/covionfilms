@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { supabaseServer } from '@/lib/supabaseServer'
+import { normalizeSubscriptionTier } from '@/lib/content-pricing'
 
 export type AuthenticatedUser = {
   id: string
@@ -51,6 +52,6 @@ export async function getAuthenticatedUser(request: Request): Promise<Authentica
     id: user.id,
     email: user.email,
     role: userData?.role || 'user',
-    subscription: subscriptionData?.tier || 'free',
+    subscription: normalizeSubscriptionTier(subscriptionData?.tier),
   }
 }

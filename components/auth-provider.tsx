@@ -5,6 +5,7 @@ import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
 import { supabase } from "@/lib/supabaseClient"
 import { User as SupabaseUser, Session } from '@supabase/supabase-js'
+import { normalizeSubscriptionTier } from "@/lib/content-pricing"
 
 type UserRole = "admin" | "management" | "creator" | "user"
 type SubscriptionTier = "free" | "standard" | "premium" | "family"
@@ -140,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         name: userData.name,
         email: userData.email,
         role: userData.role as UserRole,
-        subscription: subscriptionData?.tier as SubscriptionTier || 'free',
+        subscription: normalizeSubscriptionTier(subscriptionData?.tier) as SubscriptionTier,
         subscriptionExpiry: subscriptionData?.expiry_date ? new Date(subscriptionData.expiry_date) : undefined
       }
 

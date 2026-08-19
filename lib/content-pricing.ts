@@ -9,6 +9,18 @@ export type PurchaseType = 'movie' | 'episode'
 export type SubscriptionTier = 'free' | 'standard' | 'family'
 export type BillingPeriod = 'monthly' | 'annual'
 
+/** Maps stored/legacy values (e.g. Premium) onto the current plan ids. */
+export function normalizeSubscriptionTier(tier?: string | null): string {
+  const value = (tier || 'free').toLowerCase().trim()
+  if (value === 'premium') return 'standard'
+  return value || 'free'
+}
+
+/** Standard and Family (and legacy Premium) unlock all titles without a per-episode charge. */
+export function hasPaidSubscriptionAccess(tier?: string | null): boolean {
+  return SUBSCRIPTION_FREE_ACCESS_TIERS.has(normalizeSubscriptionTier(tier))
+}
+
 export type SubscriptionPlan = {
   id: 'free' | 'standard' | 'family'
   name: string

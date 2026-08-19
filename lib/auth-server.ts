@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { supabaseServer } from '@/lib/supabaseServer'
+import { normalizeSubscriptionTier } from '@/lib/content-pricing'
 
 const UPLOAD_ROLES = new Set(['creator', 'admin', 'management'])
 
@@ -59,6 +60,6 @@ export async function getAuthenticatedUploadUser(
     id: user.id,
     email: user.email,
     role: userData.role,
-    subscription: subscriptionData?.tier || 'free',
+    subscription: normalizeSubscriptionTier(subscriptionData?.tier),
   }
 }

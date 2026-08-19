@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { formatUsd } from '@/lib/content-pricing'
+import { formatUsd, hasPaidSubscriptionAccess } from '@/lib/content-pricing'
 import type { AccessResult } from '@/lib/content-access'
 import { Lock, Play, Sparkles, Unlock } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -24,8 +24,7 @@ export function MovieAccessBlocks({
   onPurchaseMovie,
 }: MovieAccessBlocksProps) {
   const isLocked = !accessInfo.hasAccess
-  const hasSubscription =
-    accessInfo.subscriptionTier === 'standard' || accessInfo.subscriptionTier === 'family'
+  const hasSubscription = hasPaidSubscriptionAccess(accessInfo.subscriptionTier)
 
   return (
     <Card className="overflow-hidden">
@@ -105,7 +104,7 @@ export function MovieAccessBlocks({
 }
 
 function SubscriptionBanner({ subscriptionTier }: { subscriptionTier: string }) {
-  if (subscriptionTier === 'standard' || subscriptionTier === 'family') {
+  if (hasPaidSubscriptionAccess(subscriptionTier)) {
     return (
       <p className="text-sm text-green-400 flex items-center gap-2">
         <Sparkles className="h-4 w-4" />
