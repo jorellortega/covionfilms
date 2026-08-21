@@ -33,7 +33,7 @@ function LoginForm() {
   const { login } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams?.get("redirect") || "/"
+  const redirectTo = searchParams?.get("redirect") || "/dashboard"
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -55,7 +55,7 @@ function LoginForm() {
         title: "Login Successful! 🎉",
         description: "Welcome back to COVION!",
       })
-      router.push(redirectTo.startsWith("/") ? redirectTo : "/")
+      router.push(redirectTo.startsWith("/") ? redirectTo : "/dashboard")
     } catch (error: any) {
       toast({
         title: "Login Failed",

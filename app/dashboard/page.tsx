@@ -14,7 +14,6 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { AIContent } from "@/components/ai-content"
-import { Film, Music, Crown, Star, Zap, Users } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useDashboardVisibility } from "@/hooks/use-dashboard-visibility"
 
@@ -27,6 +26,7 @@ const SHOW_PLACEHOLDER_DASHBOARD_SECTIONS = false
 export default function DashboardPage() {
   const [shuffleMode, setShuffleMode] = useState<"reels" | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+  const [showWelcome, setShowWelcome] = useState(true)
   const { user, isLoading, logout } = useAuth()
   const router = useRouter()
   const { isVisible } = useDashboardVisibility()
@@ -45,6 +45,12 @@ export default function DashboardPage() {
     }
   }, [user, isLoading, router])
 
+  useEffect(() => {
+    if (isLoading || !user) return
+    const timer = setTimeout(() => setShowWelcome(false), 5000)
+    return () => clearTimeout(timer)
+  }, [isLoading, user?.id])
+
   const handleScreenClick = useCallback(() => {
     if (shuffleMode === "reels") {
       // Navigate to Vee mode
@@ -52,7 +58,6 @@ export default function DashboardPage() {
     }
   }, [shuffleMode])
 
-  // Show loading state
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -64,46 +69,17 @@ export default function DashboardPage() {
     )
   }
 
-  // Don't render if not authenticated
   if (!user) {
     return null
-  }
-
-  const getSubscriptionIcon = (tier: string) => {
-    switch (tier) {
-      case 'premium':
-      case 'family':
-        return <Crown className="h-5 w-5 text-yellow-500" />
-      case 'standard':
-        return <Star className="h-5 w-5 text-blue-500" />
-      case 'free':
-        return <Zap className="h-5 w-5 text-green-500" />
-      default:
-        return <Users className="h-5 w-5 text-gray-500" />
-    }
-  }
-
-  const getSubscriptionColor = (tier: string) => {
-    switch (tier) {
-      case 'premium':
-      case 'family':
-        return 'from-yellow-500 to-orange-500'
-      case 'standard':
-        return 'from-blue-500 to-purple-500'
-      case 'free':
-        return 'from-green-500 to-teal-500'
-      default:
-        return 'from-gray-500 to-gray-600'
-    }
   }
 
   return (
     <div className="space-y-8 pb-24 gradient-bg min-h-screen" onClick={shuffleMode ? handleScreenClick : undefined}>
       <div className="container mx-auto px-4 py-8">
         {/* Welcome Section with User Info */}
-        <div className="text-center mb-8 relative">
+        <div className="text-center mb-8 relative min-h-[40px]">
           {/* Logout Button */}
-          <div className="absolute top-0 right-0">
+          <div className="absolute top-0 right-0 z-10">
             <Button
               variant="outline"
               onClick={async () => {
@@ -116,22 +92,14 @@ export default function DashboardPage() {
             </Button>
           </div>
           
-          <h1 className="text-3xl font-bold mb-4 bg-gradient-to-r from-primary to-[#8e2de2] text-transparent bg-clip-text">
+          <h1
+            className={`text-3xl font-bold bg-gradient-to-r from-primary to-[#8e2de2] text-transparent bg-clip-text transition-all duration-500 ${
+              showWelcome ? "opacity-100 mb-4" : "opacity-0 mb-0 h-0 overflow-hidden pointer-events-none"
+            }`}
+            aria-hidden={!showWelcome}
+          >
             Welcome back, {user.name}! 👋
           </h1>
-          
-          {/* Subscription Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-gray-800 to-gray-700 border border-gray-600">
-            {getSubscriptionIcon(user.subscription)}
-            <span className="text-sm font-medium text-white">
-              {user.subscription.charAt(0).toUpperCase() + user.subscription.slice(1)} Plan
-            </span>
-          </div>
-          
-          {/* Role Badge */}
-          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-xs text-white">
-            <span className="capitalize">{user.role}</span>
-          </div>
         </div>
 
         {isVisible('movie_trailers') && (
